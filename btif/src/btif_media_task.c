@@ -101,7 +101,6 @@ oi_sbc_decoder_vendor_interface_t *oi_sbc_decode_vnd_if = NULL;
  **  Constants
  *****************************************************************************/
 
-
 #ifndef AUDIO_CHANNEL_OUT_MONO
 #define AUDIO_CHANNEL_OUT_MONO 0x01
 #endif
@@ -239,7 +238,6 @@ static UINT32 a2dp_media_task_stack[(A2DP_MEDIA_TASK_STACK_SIZE + 3) / 4];
 #define PACKET_PLAYED_PER_TICK_32 5
 #define PACKET_PLAYED_PER_TICK_16 3
 
-#define BTIF_MEDIA_VERBOSE_ENABLED
 
 #ifdef BTIF_MEDIA_VERBOSE_ENABLED
 #define VERBOSE(fmt, ...) \
@@ -299,6 +297,7 @@ typedef struct
     BOOLEAN is_edr_supported;
     BOOLEAN is_source;
     UINT8   frames_to_process;
+    BOOLEAN rx_audio_focus_gained;
 #endif
 
 } tBTIF_MEDIA_CB;
@@ -2733,7 +2732,9 @@ UINT8 btif_media_sink_enque_buf(BT_HDR *p_pkt)
     if(btif_media_cb.rx_flush == TRUE) /* Flush enabled, do not enque*/
         return btif_media_cb.RxSbcQ.count;
     if(btif_media_cb.RxSbcQ.count == MAX_OUTPUT_A2DP_FRAME_QUEUE_SZ)
-        return MAX_OUTPUT_A2DP_FRAME_QUEUE_SZ;
+    {
+        GKI_freebuf(GKI_dequeue(&(btif_media_cb.RxSbcQ)));
+    }
 
     BTIF_TRACE_VERBOSE0("btif_media_sink_enque_buf + ");
     /* allocate and Queue this buffer */
