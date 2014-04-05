@@ -750,6 +750,7 @@ static void bta_ag_api_register(tBTA_AG_DATA *p_data)
     /* allocate an scb */
     if ((p_scb = bta_ag_scb_alloc()) != NULL)
     {
+        APPL_TRACE_DEBUG1("bta_ag_api_register: p_scb 0x%08x ", p_scb);
         bta_ag_sm_execute(p_scb, p_data->hdr.event, p_data);
     }
     else
@@ -778,6 +779,7 @@ static void bta_ag_api_result(tBTA_AG_DATA *p_data)
     {
         if ((p_scb = bta_ag_scb_by_idx(p_data->hdr.layer_specific)) != NULL)
         {
+            APPL_TRACE_IMP1("bta_ag_api_result: p_scb 0x%08x ", p_scb);
             bta_ag_sm_execute(p_scb, BTA_AG_API_RESULT_EVT, p_data);
         }
     }
@@ -785,8 +787,9 @@ static void bta_ag_api_result(tBTA_AG_DATA *p_data)
     {
         for (i = 0, p_scb = &bta_ag_cb.scb[0]; i < BTA_AG_NUM_SCB; i++, p_scb++)
         {
-            if (p_scb->in_use)
+            if (p_scb->in_use && p_scb->svc_conn)
             {
+                APPL_TRACE_DEBUG1("bta_ag_api_result p_scb 0x%08x ", p_scb);
                 bta_ag_sm_execute(p_scb, BTA_AG_API_RESULT_EVT, p_data);
             }
         }
@@ -808,23 +811,21 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
     tBTA_AG_ST_TBL      state_table;
     UINT8               action;
     int                 i;
+    UINT16              in_event = event;
+    UINT8               in_state = p_scb->state;
 
-#if BTA_AG_DEBUG == TRUE
-    UINT16  in_event = event;
-    UINT8   in_state = p_scb->state;
-
-    /* Ignore displaying of AT results when not connected (Ignored in state machine) */
     if (in_event != BTA_AG_API_RESULT_EVT || p_scb->state == BTA_AG_OPEN_ST)
     {
-        APPL_TRACE_EVENT5("AG evt (hdl 0x%04x): State %d (%s), Event 0x%04x (%s)",
-                           bta_ag_scb_to_idx(p_scb),
-                           p_scb->state, bta_ag_state_str(p_scb->state),
-                           event, bta_ag_evt_str(event, p_data->api_result.result));
+        #if BTA_AG_DEBUG == TRUE
+            APPL_TRACE_IMP5("AG evt (hdl 0x%04x): State %d (%s), Event 0x%04x (%s)",
+                       bta_ag_scb_to_idx(p_scb),
+                       p_scb->state, bta_ag_state_str(p_scb->state),
+                       event, bta_ag_evt_str(event, p_data->api_result.result));
+        #else
+           APPL_TRACE_IMP3("AG evt (hdl 0x%04x): State %d, Event 0x%04x",
+                              bta_ag_scb_to_idx(p_scb), p_scb->state, event);
+        #endif
     }
-#else
-    APPL_TRACE_EVENT3("AG evt (hdl 0x%04x): State %d, Event 0x%04x",
-                      bta_ag_scb_to_idx(p_scb), p_scb->state, event);
-#endif
 
     event &= 0x00FF;
     if (event >= (BTA_AG_MAX_EVT & 0x00FF))
@@ -851,15 +852,19 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
             break;
         }
     }
-#if BTA_AG_DEBUG == TRUE
+
     if (p_scb->state != in_state)
     {
-        APPL_TRACE_EVENT3("BTA AG State Change: [%s] -> [%s] after Event [%s]",
+        #if BTA_AG_DEBUG == TRUE
+            APPL_TRACE_IMP3("BTA AG State Change: [%s] -> [%s] after Event [%s]",
                       bta_ag_state_str(in_state),
                       bta_ag_state_str(p_scb->state),
                       bta_ag_evt_str(in_event, p_data->api_result.result));
+       #else
+           APPL_TRACE_IMP2("BTA AG State Change: [%d] -> [%d]",
+                             in_state, p_scb->state);
+       #endif
     }
-#endif
 }
 
 /*******************************************************************************
@@ -876,6 +881,7 @@ BOOLEAN bta_ag_hdl_event(BT_HDR *p_msg)
 {
     tBTA_AG_SCB *p_scb;
 
+    APPL_TRACE_DEBUG1("bta_ag_hdl_event: Event 0x%04x ", p_msg->event);
     switch (p_msg->event)
     {
         /* handle enable event */
@@ -902,6 +908,7 @@ BOOLEAN bta_ag_hdl_event(BT_HDR *p_msg)
         default:
             if ((p_scb = bta_ag_scb_by_idx(p_msg->layer_specific)) != NULL)
             {
+                APPL_TRACE_IMP1("bta_ag_hdl_event: p_scb 0x%08x ", p_scb);
                 bta_ag_sm_execute(p_scb, p_msg->event, (tBTA_AG_DATA *) p_msg);
             }
             break;

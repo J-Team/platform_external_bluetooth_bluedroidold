@@ -384,13 +384,6 @@ static void bta_hf_client_api_enable(tBTA_HF_CLIENT_DATA *p_data)
        bta_hf_client_cb.msbc_enabled = TRUE;
     }
 
-    /* check if should disable EC/NR on AG */
-    property_get("bluetooth.hfpclient.ecnr", value, "0");
-    if (atoi(value) != 0)
-    {
-        bta_hf_client_cb.ecnr_disable = TRUE;
-    }
-
     bta_hf_client_cb.scb.negotiated_codec = BTM_SCO_CODEC_CVSD;
 
     /* set same setting as AG does */
@@ -535,12 +528,6 @@ void bta_hf_client_sm_execute(UINT16 event, tBTA_HF_CLIENT_DATA *p_data)
 static void send_post_slc_cmd(void)
 {
     bta_hf_client_cb.scb.at_cb.current_cmd = BTA_HF_CLIENT_AT_NONE;
-
-    if ((bta_hf_client_cb.scb.peer_features & BTA_HF_CLIENT_PEER_FEAT_ECNR) &&
-            bta_hf_client_cb.ecnr_disable == TRUE)
-    {
-        bta_hf_client_send_at_nrec();
-    }
 
     bta_hf_client_send_at_bia();
     bta_hf_client_send_at_ccwa(TRUE);

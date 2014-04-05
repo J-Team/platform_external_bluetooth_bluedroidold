@@ -439,6 +439,8 @@ typedef struct t_l2c_linkcb
 #define UPD_DISABLED    1  /* application requested not to update */
 #define UPD_PENDING     2  /* while updates are disabled, peer requested new parameters */
 #define UPD_UPDATED     3  /* peer updated connection parameters */
+#define UPD_SLAVE_PENDING  4
+#define UPD_SLAVE_UPDATED  5
     UINT8               upd_disabled;
 
     UINT16              min_interval; /* parameters as requested by peripheral */

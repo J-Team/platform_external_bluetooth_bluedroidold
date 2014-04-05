@@ -1337,6 +1337,50 @@ void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable)
 }
 
 /*******************************************************************************
+**
+** Function         btm_ble_encryption_failure
+**
+** Description      This function is called when LE link encrption status is changed.
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_ble_encryption_failure(BD_ADDR bd_addr,UINT8 status)
+{
+    tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev (bd_addr);
+    BOOLEAN             enc_cback;
+
+    if (!p_dev_rec)
+    {
+        BTM_TRACE_WARNING1 ("btm_ble_encryption_failure (No Device Found!) status=%d", status);
+        return;
+    }
+
+    BTM_TRACE_DEBUG1 ("btm_ble_encryption_failure status=%d", status);
+
+    enc_cback = (p_dev_rec->sec_state == BTM_SEC_STATE_ENCRYPTING);
+
+    smp_link_encrypted(bd_addr, 0);//encr_enable=0
+
+    BTM_TRACE_DEBUG1(" p_dev_rec->sec_flags=0x%x", p_dev_rec->sec_flags);
+
+    p_dev_rec->sec_state = BTM_SEC_STATE_IDLE;
+    if (p_dev_rec->p_callback && enc_cback && p_dev_rec->role_master)
+    {
+        if (status==HCI_ERR_CONN_FAILED_ESTABLISHMENT)
+            btm_sec_dev_rec_cback_event(p_dev_rec, BTM_BAD_RF);
+        else if (status == BTM_DEVICE_TIMEOUT)
+            btm_sec_dev_rec_cback_event(p_dev_rec, BTM_DEVICE_TIMEOUT);
+        else
+            btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_PROCESSING);
+
+    }
+    /* to notify GATT to send data if any request is pending */
+    gatt_notify_enc_cmpl(p_dev_rec->bd_addr);
+}
+
+
+/*******************************************************************************
 ** Function         btm_enc_proc_ltk
 ** Description      send LTK reply when it's ready.
 *******************************************************************************/
@@ -1610,7 +1654,7 @@ UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
     tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev (bd_addr);
     UINT8 res = 0;
 
-    BTM_TRACE_DEBUG1 ("btm_proc_smp_cback event = %d", event);
+    BTM_TRACE_DEBUG3 ("btm_proc_smp_cback event = %d, state=%d btm_cb.pairing_bda[5]=0x%0x", event, btm_cb.pairing_state, btm_cb.pairing_bda[5]);
 
     if (p_dev_rec != NULL)
     {
@@ -1625,6 +1669,14 @@ UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
             case SMP_OOB_REQ_EVT:
                 p_dev_rec->sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
             case SMP_SEC_REQUEST_EVT:
+                if(event == SMP_SEC_REQUEST_EVT)
+                {
+                    if(btm_cb.pairing_state != BTM_PAIR_STATE_IDLE && memcmp(bd_addr, btm_cb.pairing_bda, BD_ADDR_LEN) != 0)
+                    {
+                        BTM_TRACE_DEBUG1("%s: btm_cb busy with another pairing, cancel this one", __FUNCTION__);
+                        return 0;
+                    }
+                }
                 memcpy (btm_cb.pairing_bda, bd_addr, BD_ADDR_LEN);
                 p_dev_rec->sec_state = BTM_SEC_STATE_AUTHENTICATING;
                 /* fall through */

@@ -235,12 +235,13 @@ tAVDT_CTRL_CBACK * const bta_av_dt_cback[] =
 **
 ** Returns          void
 ***********************************************/
-UINT8  bta_av_get_scb_handle ( tBTA_AV_SCB *p_scb, UINT8 t_local_sep )
+UINT8  bta_av_get_scb_handle ( tBTA_AV_SCB *p_scb, UINT8 local_sep )
 {
     UINT8 xx =0;
     for (xx = 0; xx<BTA_AV_MAX_SEPS; xx++)
     {
-        if (p_scb->seps[xx].tsep == t_local_sep)
+        if ((p_scb->seps[xx].tsep == local_sep) &&
+            (p_scb->seps[xx].codec_type == p_scb->codec_type))
             return (p_scb->seps[xx].av_handle);
     }
     APPL_TRACE_DEBUG0(" bta_av_get_scb_handle appropiate sep_type not found")
@@ -561,6 +562,11 @@ void bta_av_stream_data_cback(UINT8 handle, BT_HDR *p_pkt, UINT32 time_stamp, UI
 {
     int index = 0;
     tBTA_AV_SCB         *p_scb ;
+    if (p_pkt == NULL )
+    {
+        APPL_TRACE_ERROR0("bta_av_stream_data_cback: Not a valid packet");
+        return;
+    }
     APPL_TRACE_DEBUG3("bta_av_stream_data_cback avdt_handle: %d pkt_len=0x%x  ofst = 0x%x", handle,p_pkt->len,p_pkt->offset);
     APPL_TRACE_DEBUG1(" Number of frames 0x%x",*((UINT8*)(p_pkt + 1) + p_pkt->offset));
     APPL_TRACE_DEBUG1("Sequence Number 0x%x",p_pkt->layer_specific);
@@ -568,11 +574,15 @@ void bta_av_stream_data_cback(UINT8 handle, BT_HDR *p_pkt, UINT32 time_stamp, UI
     for(index = 0; index < BTA_AV_NUM_STRS;index ++ )
     {
         p_scb = bta_av_cb.p_scb[index];
-        if((p_scb->avdt_handle == handle)&&(p_scb->seps[p_scb->sep_idx].tsep == AVDT_TSEP_SNK))
+        if (p_scb == NULL)
+            continue;
+        if ((p_scb->avdt_handle == handle) && (p_scb->seps[p_scb->sep_idx].tsep == AVDT_TSEP_SNK)
+                                                             && (p_scb->state == BTA_AV_OPEN_SST))
             break;
     }
     if(index == BTA_AV_NUM_STRS) /* cannot find correct handler */
     {
+        APPL_TRACE_ERROR0("bta_av_stream_data_cback: Could not find matching Streaming Channel");
         GKI_freebuf(p_pkt);
         return;
     }
@@ -1113,8 +1123,18 @@ void bta_av_config_ind (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     p_scb->codec_type = p_evt_cfg->codec_info[BTA_AV_CODEC_TYPE_IDX];
     bta_av_save_addr(p_scb, p_data->str_msg.bd_addr);
 
-    /* Clear collision mask */
-    p_scb->coll_mask = 0;
+
+    if (p_scb->coll_mask & BTA_AV_COLL_API_CALLED)
+    {
+        APPL_TRACE_DEBUG0(" bta_av_config_ind ReSetting collision mask  ");
+        /* Clear collision mask */
+        p_scb->coll_mask = 0;
+    }
+    else
+    {
+        APPL_TRACE_WARNING0(" bta_av_config_ind config_ind called before Open");
+        p_scb->coll_mask |= BTA_AV_COLL_SETCONFIG_IND;
+    }
     bta_sys_stop_timer(&bta_av_cb.acp_sig_tmr);
 
     /* if no codec parameters in configuration, fail */
@@ -1161,12 +1181,6 @@ void bta_av_config_ind (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
                              p_evt_cfg->protect_info,
                              AVDT_TSEP_SNK,
                              p_msg->handle);
-            for(count =0; count < BTA_AV_MAX_SEPS; count ++)
-            {
-                if (p_scb->seps[count].av_handle == p_msg->handle)
-                    break;
-            }
-            p_scb->seps[count].p_app_data_cback(BTA_AV_MEDIA_SINK_CFG_EVT, (tBTA_AV_MEDIA*)p_evt_cfg->codec_info);
         }
         else
         {
@@ -1273,6 +1287,12 @@ void bta_av_setconfig_rsp (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     local_sep = bta_av_get_scb_sep_type(p_scb,avdt_handle);
     bta_av_adjust_seps_idx(p_scb, avdt_handle);
     APPL_TRACE_DEBUG2("bta_av_setconfig_rsp: sep_idx: %d cur_psc_mask:0x%x", p_scb->sep_idx, p_scb->cur_psc_mask);
+    if ((AVDT_TSEP_SNK == local_sep) && (p_data->ci_setconfig.err_code == AVDT_SUCCESS) &&
+                                     (p_scb->seps[p_scb->sep_idx].p_app_data_cback != NULL))
+        p_scb->seps[p_scb->sep_idx].p_app_data_cback(BTA_AV_MEDIA_SINK_CFG_EVT,
+                                              (tBTA_AV_MEDIA*)p_scb->cfg.codec_info);
+
+
     AVDT_ConfigRsp(p_scb->avdt_handle, p_scb->avdt_label, p_data->ci_setconfig.err_code,
                    p_data->ci_setconfig.category);
 
@@ -1356,8 +1376,8 @@ void bta_av_str_opened (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     if(mtu == 0 || mtu > p_scb->stream_mtu)
         mtu = p_scb->stream_mtu;
 
-    /* Set the media channel as medium priority */
-    L2CA_SetTxPriority(p_scb->l2c_cid, L2CAP_CHNL_PRIORITY_MEDIUM);
+    /* Set the media channel as high priority */
+    L2CA_SetTxPriority(p_scb->l2c_cid, L2CAP_CHNL_PRIORITY_HIGH);
     L2CA_SetChnlFlushability (p_scb->l2c_cid, TRUE);
 
     bta_sys_conn_open(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
@@ -1858,9 +1878,12 @@ void bta_av_getcap_results (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
 void bta_av_setconfig_rej (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
 {
     tBTA_AV_REJECT reject;
+    UINT8   avdt_handle = p_data->ci_setconfig.avdt_handle;
 
-    APPL_TRACE_DEBUG0("bta_av_setconfig_rej");
-    AVDT_ConfigRsp(p_data->str_msg.handle, p_data->str_msg.msg.hdr.label, AVDT_ERR_BAD_STATE, 0);
+    bta_av_adjust_seps_idx(p_scb, avdt_handle);
+    APPL_TRACE_DEBUG1("bta_av_setconfig_rej: sep_idx: %d",p_scb->sep_idx);
+    AVDT_ConfigRsp(p_scb->avdt_handle, p_scb->avdt_label, AVDT_ERR_UNSUP_CFG, 0);
+
     bdcpy(reject.bd_addr, p_data->str_msg.bd_addr);
     reject.hndl = p_scb->hndl;
     (*bta_av_cb.p_cback)(BTA_AV_REJECT_EVT, (tBTA_AV *) &reject);
@@ -2294,15 +2317,15 @@ void bta_av_start_ok (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
         p_scb->q_tag = BTA_AV_Q_TAG_START;
     }
 
-    if (p_scb->wait & BTA_AV_WAIT_ACP_CAPS_ON)
-    {
-        p_scb->wait |= BTA_AV_WAIT_ACP_CAPS_STARTED;
-    }
-
     if (p_scb->wait)
     {
-        APPL_TRACE_DEBUG2("wait:x%x q_tag:%d- not started", p_scb->wait, p_scb->q_tag);
-        return;
+        APPL_TRACE_ERROR2("wait:x%x q_tag:%d- not started", p_scb->wait, p_scb->q_tag);
+        /* Clear first bit of p_scb->wait and not to return from this point else
+         * HAL layer gets blocked. And if there is delay in Get Capability response as
+         * first bit of p_scb->wait is cleared hence it ensures bt_av_start_ok is not called
+         * again from bta_av_save_caps.
+        */
+        p_scb->wait &= ~BTA_AV_WAIT_ACP_CAPS_ON;
     }
 
     /* tell role manager to check M/S role */
@@ -2978,6 +3001,14 @@ void bta_av_open_at_inc (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
 
     memcpy (&(p_scb->open_api), &(p_data->api_open), sizeof(tBTA_AV_API_OPEN));
 
+    if (p_scb->coll_mask & BTA_AV_COLL_SETCONFIG_IND)
+    {
+        APPL_TRACE_WARNING0(" SetConfig is already called, timer stopped");
+        /* make mask 0, timer shld have already been closed in setconfig_ind */
+        p_scb->coll_mask = 0;
+        return;
+    }
+
     if (p_scb->coll_mask & BTA_AV_COLL_INC_TMR)
     {
         p_scb->coll_mask |= BTA_AV_COLL_API_CALLED;
@@ -2989,6 +3020,7 @@ void bta_av_open_at_inc (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     {
         /* SNK did not start signalling, API was called N seconds timeout. */
         /* We need to switch to INIT state and start opening connection. */
+        APPL_TRACE_ERROR0(" bta_av_open_at_inc ReSetting collision mask  ");
         p_scb->coll_mask = 0;
         bta_av_set_scb_sst_init (p_scb);
 

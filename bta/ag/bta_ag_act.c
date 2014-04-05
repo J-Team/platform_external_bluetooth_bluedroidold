@@ -402,7 +402,7 @@ void bta_ag_rfc_fail(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 *******************************************************************************/
 void bta_ag_rfc_close(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 {
-    tBTA_AG_HDR    close;
+    tBTA_AG_CLOSE    close;
     tBTA_SERVICE_MASK services;
     int i, num_active_conn = 0;
 
@@ -431,13 +431,14 @@ void bta_ag_rfc_close(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     bta_sys_stop_timer(&p_scb->cn_timer);
 #endif
 
-    close.handle = bta_ag_scb_to_idx(p_scb);
-    close.app_id = p_scb->app_id;
+    close.hdr.handle = bta_ag_scb_to_idx(p_scb);
+    close.hdr.app_id = p_scb->app_id;
+    bdcpy(close.bd_addr, p_scb->peer_addr);
 
     bta_sys_conn_close(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
 
     /* call close call-out */
-    bta_ag_co_data_close(close.handle);
+    bta_ag_co_data_close(close.hdr.handle);
 
     /* call close cback */
     (*bta_ag_cb.p_cback)(BTA_AG_CLOSE_EVT, (tBTA_AG *) &close);
@@ -550,7 +551,7 @@ void bta_ag_rfc_acp_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     /* set role */
     p_scb->role = BTA_AG_ACP;
 
-    APPL_TRACE_DEBUG2 ("bta_ag_rfc_acp_open: serv_handle0 = %d serv_handle1 = %d",
+    APPL_TRACE_IMP2 ("bta_ag_rfc_acp_open: serv_handle0 = %d serv_handle1 = %d",
                        p_scb->serv_handle[0], p_scb->serv_handle[1]);
 
     /* get bd addr of peer */
@@ -607,7 +608,7 @@ void bta_ag_rfc_acp_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         }
     }
 
-    APPL_TRACE_DEBUG2 ("bta_ag_rfc_acp_open: conn_service = %d conn_handle = %d",
+    APPL_TRACE_IMP2 ("bta_ag_rfc_acp_open: conn_service = %d conn_handle = %d",
                        p_scb->conn_service, p_scb->conn_handle);
 
     /* close any unopened server */
@@ -661,7 +662,7 @@ void bta_ag_rfc_data(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         bta_ag_at_parse(&p_scb->at_cb, buf, len);
         if ((p_scb->sco_idx != BTM_INVALID_SCO_INDEX) && bta_ag_sco_is_open(p_scb))
         {
-            APPL_TRACE_DEBUG0 ("bta_ag_rfc_data, change link policy for SCO");
+            APPL_TRACE_IMP0 ("bta_ag_rfc_data, change link policy for SCO");
             bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
         }
         else
@@ -822,6 +823,7 @@ void bta_ag_svc_conn_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         evt.hdr.handle = bta_ag_scb_to_idx(p_scb);
         evt.hdr.app_id = p_scb->app_id;
         evt.peer_feat = p_scb->peer_features;
+        bdcpy(evt.bd_addr, p_scb->peer_addr);
 #if (BTM_WBS_INCLUDED == TRUE )
         evt.peer_codec  = p_scb->peer_codecs;
 #endif
@@ -857,7 +859,7 @@ void bta_ag_ci_rx_data(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     PORT_WriteData(p_scb->conn_handle, p_data_area, strlen(p_data_area), &len);
     if ((p_scb->sco_idx != BTM_INVALID_SCO_INDEX) && bta_ag_sco_is_open(p_scb))
     {
-        APPL_TRACE_DEBUG0 ("bta_ag_rfc_data, change link policy for SCO");
+        APPL_TRACE_IMP0 ("bta_ag_rfc_data, change link policy for SCO");
         bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     }
     else

@@ -790,6 +790,7 @@ void btif_hh_setreport(btif_hh_device_t *p_dev, bthh_report_type_t r_type, UINT1
     int i = 0;
     if (p_dev->p_buf != NULL) {
         GKI_freebuf(p_dev->p_buf);
+        p_dev->p_buf = NULL;
     }
     p_dev->p_buf = GKI_getbuf((UINT16) (len + BTA_HH_MIN_OFFSET + sizeof(BT_HDR)));
     if (p_dev->p_buf == NULL) {
@@ -933,6 +934,7 @@ static void btif_hh_upstreams_evt(UINT16 event, char* p_param)
                                    // HID device number.
                     BTA_HhClose(p_data->conn.handle);
                     HAL_CBACK(bt_hh_callbacks, connection_state_cb, (bt_bdaddr_t*) &p_data->conn.bda,BTHH_CONN_STATE_DISCONNECTED);
+                    break;
                 }
                 else if (p_dev->fd < 0) {
                     BTIF_TRACE_WARNING0("BTA_HH_OPEN_EVT: Error, failed to find the uhid driver...");
@@ -1020,7 +1022,7 @@ static void btif_hh_upstreams_evt(UINT16 event, char* p_param)
         case BTA_HH_GET_RPT_EVT:
             BTIF_TRACE_DEBUG2("BTA_HH_GET_RPT_EVT: status = %d, handle = %d",
                  p_data->hs_data.status, p_data->hs_data.handle);
-            p_dev = btif_hh_find_connected_dev_by_handle(p_data->conn.handle);
+            p_dev = btif_hh_find_connected_dev_by_handle(p_data->hs_data.handle);
             HAL_CBACK(bt_hh_callbacks, get_report_cb,(bt_bdaddr_t*) &(p_dev->bd_addr), (bthh_status_t) p_data->hs_data.status,
                 (uint8_t*) p_data->hs_data.rsp_data.p_rpt_data, BT_HDR_SIZE);
             break;
@@ -1030,14 +1032,13 @@ static void btif_hh_upstreams_evt(UINT16 event, char* p_param)
             p_data->dev_status.status, p_data->dev_status.handle);
             p_dev = btif_hh_find_connected_dev_by_handle(p_data->dev_status.handle);
             if (p_dev != NULL && p_dev->p_buf != NULL) {
-                BTIF_TRACE_DEBUG0("Freeing buffer..." );
-                GKI_freebuf(p_dev->p_buf);
+                BTIF_TRACE_DEBUG0("Buffer already freed, assigning pointer to NULL" );
                 p_dev->p_buf = NULL;
             }
             break;
 
         case BTA_HH_GET_PROTO_EVT:
-            p_dev = btif_hh_find_connected_dev_by_handle(p_data->dev_status.handle);
+            p_dev = btif_hh_find_connected_dev_by_handle(p_data->hs_data.handle);
             BTIF_TRACE_WARNING4("BTA_HH_GET_PROTO_EVT: status = %d, handle = %d, proto = [%d], %s",
                  p_data->hs_data.status, p_data->hs_data.handle,
                  p_data->hs_data.rsp_data.proto_mode,
@@ -1056,7 +1057,7 @@ static void btif_hh_upstreams_evt(UINT16 event, char* p_param)
             BTIF_TRACE_DEBUG3("BTA_HH_GET_IDLE_EVT: handle = %d, status = %d, rate = %d",
                  p_data->hs_data.handle, p_data->hs_data.status,
                  p_data->hs_data.rsp_data.idle_rate);
-            p_dev = btif_hh_find_connected_dev_by_handle(p_data->conn.handle);
+            p_dev = btif_hh_find_connected_dev_by_handle(p_data->hs_data.handle);
             HAL_CBACK(bt_hh_callbacks, idle_time_cb,(bt_bdaddr_t*) &(p_dev->bd_addr), (bthh_status_t) p_data->hs_data.status,
                 p_data->hs_data.rsp_data.idle_rate);
             break;
@@ -1763,6 +1764,7 @@ static bt_status_t set_report (bt_bdaddr_t *bd_addr, bthh_report_type_t reportTy
 
         if (p_dev->p_buf != NULL) {
             GKI_freebuf(p_dev->p_buf);
+            p_dev->p_buf = NULL;
         }
         hexbuf = GKI_getbuf((UINT16) (strlen(report)));
         if (hexbuf == NULL) {
@@ -1838,6 +1840,7 @@ static bt_status_t send_data (bt_bdaddr_t *bd_addr, char* data)
 
         if (p_dev->p_buf != NULL) {
             GKI_freebuf(p_dev->p_buf);
+            p_dev->p_buf = NULL;
         }
         hexbuf = GKI_getbuf((UINT16) (strlen(data)));
         if (hexbuf == NULL) {

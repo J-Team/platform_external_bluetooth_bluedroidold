@@ -28,6 +28,7 @@
  ***********************************************************************************/
 
 #include <hardware/bluetooth.h>
+#include <hardware/bt_multi_hf.h>
 #include <hardware/bt_hf.h>
 #include <hardware/bt_av.h>
 #include <netinet/in.h>
@@ -285,7 +286,9 @@ const char* dump_dm_event(UINT16 event)
         CASE_RETURN_STR(BTA_DM_BLE_AUTH_CMPL_EVT)
         CASE_RETURN_STR(BTA_DM_DEV_UNPAIRED_EVT)
         CASE_RETURN_STR(BTA_DM_HW_ERROR_EVT)
-
+        CASE_RETURN_STR(BTA_DM_BLE_ADV_ENABLE_EVT)
+        CASE_RETURN_STR(BTA_DM_REM_NAME_EVT)
+        CASE_RETURN_STR(BTA_DM_BLE_CONN_PARAMS_EVT)
         default:
             return "UNKNOWN DM EVENT";
     }
@@ -357,7 +360,7 @@ const char* dump_hf_client_event(UINT16 event)
         CASE_RETURN_STR(BTA_HF_CLIENT_BTRH_EVT)
         CASE_RETURN_STR(BTA_HF_CLIENT_BSIR_EVT)
         CASE_RETURN_STR(BTA_HF_CLIENT_BINP_EVT)
-
+        CASE_RETURN_STR(BTA_HF_CLIENT_RING_INDICATION)
         default:
             return "UNKNOWN MSG ID";
      }
@@ -395,8 +398,13 @@ const char* dump_hd_event(UINT16 event)
         CASE_RETURN_STR(BTA_HD_DISABLE_EVT)
         CASE_RETURN_STR(BTA_HD_REGISTER_APP_EVT)
         CASE_RETURN_STR(BTA_HD_UNREGISTER_APP_EVT)
+        CASE_RETURN_STR(BTA_HD_OPEN_EVT)
+        CASE_RETURN_STR(BTA_HD_CLOSE_EVT)
         CASE_RETURN_STR(BTA_HD_GET_REPORT_EVT)
+        CASE_RETURN_STR(BTA_HD_SET_REPORT_EVT)
+        CASE_RETURN_STR(BTA_HD_SET_PROTOCOL_EVT)
         CASE_RETURN_STR(BTA_HD_INTR_DATA_EVT)
+        CASE_RETURN_STR(BTA_HD_VC_UNPLUG_EVT)
         CASE_RETURN_STR(BTA_HD_API_ERR_EVT)
         default:
             return "UNKNOWN MSG ID";

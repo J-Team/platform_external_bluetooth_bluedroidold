@@ -389,6 +389,10 @@
 #define BT_TRACE_BTIF  TRUE
 #endif
 
+#ifndef BT_TRACE_LATENCY_AUDIO
+#define BT_TRACE_LATENCY_AUDIO  TRUE
+#endif
+
 #ifndef BTTRC_INCLUDED
 #define BTTRC_INCLUDED  FALSE
 #endif
@@ -580,7 +584,7 @@
 /* Number of ACL buffers to assign to LE
    if the HCI buffer pool is shared with BR/EDR */
 #ifndef L2C_DEF_NUM_BLE_BUF_SHARED
-#define L2C_DEF_NUM_BLE_BUF_SHARED      1
+#define L2C_DEF_NUM_BLE_BUF_SHARED      2
 #endif
 
 /* Used by BTM when it sends HCI commands to the controller. */
@@ -1052,7 +1056,7 @@ and USER_HW_DISABLE_API macros */
 
 /* The number of SCO links. */
 #ifndef BTM_MAX_SCO_LINKS
-#define BTM_MAX_SCO_LINKS           2
+#define BTM_MAX_SCO_LINKS           3
 #endif
 
 /* The preferred type of SCO links (2-eSCO, 0-SCO). */
@@ -1417,6 +1421,10 @@ and USER_HW_DISABLE_API macros */
 #else
 #define TIMER_PARAM_TYPE    UINT32
 #endif
+#endif
+
+#ifndef HCI_RAW_CMD_INCLUDED
+#define HCI_RAW_CMD_INCLUDED    TRUE
 #endif
 
 /******************************************************************************
@@ -2704,11 +2712,11 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 
 /* HID Device Role Included */
 #ifndef HID_DEV_INCLUDED
-#define HID_DEV_INCLUDED             FALSE
+#define HID_DEV_INCLUDED             TRUE
 #endif
 
 #ifndef HID_DEV_PM_INCLUDED
-#define HID_DEV_PM_INCLUDED         TRUE
+#define HID_DEV_PM_INCLUDED         FALSE
 #endif
 
 /* The HID Device is a virtual cable */
@@ -3545,6 +3553,11 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 #endif
 #endif
 #endif
+
+#ifndef AVRC_CTLR_INCLUDED
+#define AVRC_CTLR_INCLUDED          TRUE
+#endif
+
 /******************************************************************************
 **
 ** MCAP
@@ -3780,6 +3793,11 @@ The maximum number of payload octets that the local device can receive in a sing
 /* When TRUE indicates that an application task is to be run */
 #ifndef APPL_INCLUDED
 #define APPL_INCLUDED                TRUE
+#endif
+
+/* TEST_APP_INTERFACE */
+#ifndef TEST_APP_INTERFACE
+#define TEST_APP_INTERFACE          TRUE
 #endif
 
 /* When TRUE remote terminal code included (RPC MUST be included) */

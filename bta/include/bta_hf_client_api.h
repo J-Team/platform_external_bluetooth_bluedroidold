@@ -101,6 +101,7 @@ typedef UINT8 tBTA_HF_CLIENT_AT_RESULT_TYPE;
 #define BTA_HF_CLIENT_BTRH_EVT              18 /* bluetooth response and hold event */
 #define BTA_HF_CLIENT_BSIR_EVT              19 /* in-band ring tone setting changed event */
 #define BTA_HF_CLIENT_BINP_EVT              20 /* binp number event */
+#define BTA_HF_CLIENT_RING_INDICATION       21 /* HF Client ring indication */
 #define BTA_HF_CLIENT_DISABLE_EVT           30 /* HF Client disabled */
 
 typedef UINT8 tBTA_HF_CLIENT_EVT;
@@ -140,6 +141,7 @@ typedef UINT8 tBTA_HF_CLIENT_IND_TYPE;
 #define BTA_HF_CLIENT_AT_CMD_CLCC   12
 #define BTA_HF_CLIENT_AT_CMD_BINP   13
 #define BTA_HF_CLIENT_AT_CMD_BLDN   14
+#define BTA_HF_CLIENT_AT_CMD_NREC   15
 
 typedef UINT8 tBTA_HF_CLIENT_AT_CMD_TYPE;
 

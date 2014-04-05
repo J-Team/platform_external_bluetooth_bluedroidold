@@ -60,6 +60,10 @@ static void btm_save_remote_device_role(BD_ADDR bd_addr, UINT8 role)
 {
     UINT8 i, j;
     if (role == BTM_ROLE_UNDEFINED) return;
+    BTM_TRACE_WARNING6 ("BTM: RemBdAddr: %02x%02x%02x%02x%02x%02x",
+                         bd_addr[0], bd_addr[1], bd_addr[2], bd_addr[3],
+                         bd_addr[4], bd_addr[5]);
+    BTM_TRACE_WARNING1 ("BTM: remote role: 0x%02x", role);
 
     for (i = 0; i < BTM_ROLE_DEVICE_NUM; i++) {
         if ((btm_cb.previous_connected_role[i] != BTM_ROLE_UNDEFINED) &&
@@ -196,7 +200,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
     tACL_CONN        *p;
     UINT8             xx;
 
-    BTM_TRACE_DEBUG3 ("btm_acl_created hci_handle=%d link_role=%d  is_le_link=%d",
+    BTM_TRACE_WARNING3 ("btm_acl_created hci_handle=%d link_role=%d  is_le_link=%d",
                       hci_handle,link_role, is_le_link);
     /* Ensure we don't have duplicates */
     p = btm_bda_to_acl(bda);
@@ -207,6 +211,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
         btm_save_remote_device_role(bda, link_role);
 #if BLE_INCLUDED == TRUE
         p->is_le_link = is_le_link;
+        p->le_read_remote_features_complete_status = -1;
 #endif
         BTM_TRACE_DEBUG6 ("Duplicate btm_acl_created: RemBdAddr: %02x%02x%02x%02x%02x%02x",
                           bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]);
@@ -227,6 +232,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
 
 #if BLE_INCLUDED == TRUE
             p->is_le_link        = is_le_link;
+            p->le_read_remote_features_complete_status = -1;
 
             if (is_le_link)
             {
@@ -255,7 +261,6 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
             /* if BR/EDR do something more */
             if (!is_le_link)
             {
-                btsnd_hcic_read_rmt_clk_offset (p->hci_handle);
                 btsnd_hcic_rmt_ver_req (p->hci_handle);
             }
             p_dev_rec = btm_find_dev_by_handle (hci_handle);
@@ -300,23 +305,40 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                 btm_establish_continue(p);
 
 #if (!defined(BTA_SKIP_BLE_READ_REMOTE_FEAT) || BTA_SKIP_BLE_READ_REMOTE_FEAT == FALSE)
-                if (link_role == HCI_ROLE_MASTER)
-                {
-                    btsnd_hcic_ble_read_remote_feat(p->hci_handle);
-                }
+            btsnd_hcic_ble_read_remote_feat(p->hci_handle);
 #endif
             }
-            else
 #endif
-            {
-                btm_read_remote_features (p->hci_handle);
-            }
 
             /* read page 1 - on rmt feature event for buffer reasons */
             return;
         }
     }
 }
+
+/*******************************************************************************
+**
+** Function         btm_ble_conn_params_evt
+**
+** Description      This function is called by L2CAP when an ACL connection
+**                  is created.
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_ble_conn_params_evt(BD_ADDR remote_bd_addr, UINT8 status, UINT16 conn_interval_min,
+        UINT16 conn_interval_max, UINT16 latency, UINT16 supervision_timeout, UINT8 evt)
+{
+    tBTM_SEC_DEV_REC *p_dev_rec = NULL;
+    UINT8             yy;
+    tACL_CONN        *p;
+    UINT8             xx;
+
+    BTM_TRACE_DEBUG0 ("btm_ble_conn_params_evt");
+    if (btm_cb.p_ble_conn_params_cb)
+        (*btm_cb.p_ble_conn_params_cb) (remote_bd_addr, status, conn_interval_min,
+                conn_interval_max, latency, supervision_timeout, evt);
+ }
 
 
 /*******************************************************************************
@@ -370,6 +392,7 @@ void btm_acl_removed (BD_ADDR bda)
     if (p != (tACL_CONN *)NULL)
     {
         p->in_use = FALSE;
+        p->le_read_remote_features_complete_status = -1;
 
         /* if the disconnected channel has a pending role switch, clear it now */
         btm_acl_report_role_change(HCI_ERR_NO_CONNECTION, bda);
@@ -571,6 +594,10 @@ tBTM_STATUS BTM_GetRole (BD_ADDR remote_bd_addr, UINT8 *p_role)
 
     /* Get the current role */
     *p_role = p->link_role;
+    BTM_TRACE_WARNING1 ("BTM: Local device role : 0x%02x", *p_role );
+    BTM_TRACE_WARNING6 ("BTM: RemBdAddr: %02x%02x%02x%02x%02x%02x",
+                         remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2], remote_bd_addr[3],
+                         remote_bd_addr[4], remote_bd_addr[5]);
     return(BTM_SUCCESS);
 }
 
@@ -607,9 +634,6 @@ tBTM_STATUS BTM_SwitchRole (BD_ADDR remote_bd_addr, UINT8 new_role, tBTM_CMPL_CB
 #if (BT_USE_TRACES == TRUE)
     BD_ADDR_PTR  p_bda;
 #endif
-    BTM_TRACE_API6 ("BTM_SwitchRole BDA: %02x-%02x-%02x-%02x-%02x-%02x",
-                    remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2],
-                    remote_bd_addr[3], remote_bd_addr[4], remote_bd_addr[5]);
 
     /* Make sure the local device supports switching */
     if (!(HCI_SWITCH_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0])))
@@ -725,6 +749,12 @@ tBTM_STATUS BTM_SwitchRole (BD_ADDR remote_bd_addr, UINT8 new_role, tBTM_CMPL_CB
         btm_cb.devcb.switch_role_ref_data.hci_status = HCI_ERR_UNSUPPORTED_VALUE;
         btm_cb.devcb.p_switch_role_cb = p_cb;
     }
+    BTM_TRACE_WARNING6 ("BTM_SwitchRole BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                    remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2],
+                    remote_bd_addr[3], remote_bd_addr[4], remote_bd_addr[5]);
+
+    BTM_TRACE_WARNING1 ("Requested New Role: %d", new_role);
+
     return(BTM_CMD_STARTED);
 }
 
@@ -1243,6 +1273,16 @@ void btm_read_remote_version_complete (UINT8 *p)
                 STREAM_TO_UINT8  (p_acl_cb->lmp_version, p);
                 STREAM_TO_UINT16 (p_acl_cb->manufacturer, p);
                 STREAM_TO_UINT16 (p_acl_cb->lmp_subversion, p);
+                if(!p_acl_cb->is_le_link)
+                {
+                    BTM_TRACE_DEBUG0("Calling btm_read_remote_features");
+                    btm_read_remote_features (p_acl_cb->hci_handle);
+                }
+                BTM_TRACE_WARNING6 ("btm_read_remote_version_complete: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                            p_acl_cb->remote_addr[0], p_acl_cb->remote_addr[1], p_acl_cb->remote_addr[2],
+                            p_acl_cb->remote_addr[3], p_acl_cb->remote_addr[4], p_acl_cb->remote_addr[5]);
+                BTM_TRACE_WARNING3 ("btm_read_remote_version_complete lmp_version %d manufacturer %d lmp_subversion %d",
+                                         p_acl_cb->lmp_version,p_acl_cb->manufacturer, p_acl_cb->lmp_subversion);
                 break;
             }
         }
@@ -1265,6 +1305,7 @@ void btm_process_remote_ext_features (tACL_CONN *p_acl_cb, UINT8 num_read_pages)
     UINT16              handle = p_acl_cb->hci_handle;
     tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev_by_handle (handle);
     UINT8               page_idx;
+    UINT8             status;
 
     BTM_TRACE_DEBUG0 ("btm_process_remote_ext_features");
 
@@ -1282,6 +1323,22 @@ void btm_process_remote_ext_features (tACL_CONN *p_acl_cb, UINT8 num_read_pages)
     for (page_idx = 0; page_idx < num_read_pages; page_idx++)
     {
         btm_process_remote_ext_features_page (p_acl_cb, p_dev_rec, page_idx);
+    }
+
+    if (p_dev_rec->sec_flags & BTM_SEC_NAME_KNOWN)
+    {
+        /* Name is know, unset it so that name is retrieved again
+         * from security procedure. This will ensure, that if remote device
+         * has updated its name since last connection, we will have
+         * update name of remote device. */
+        p_dev_rec->sec_flags &= ~BTM_SEC_NAME_KNOWN;
+    }
+
+    if (!(p_dev_rec->sec_flags & BTM_SEC_NAME_KNOWN) || p_dev_rec->is_originator)
+    {
+        BTM_TRACE_DEBUG0 ("Calling Next Security Procedure");
+        if ((status = btm_sec_execute_procedure (p_dev_rec)) != BTM_CMD_STARTED)
+            btm_sec_dev_rec_cback_event (p_dev_rec, status);
     }
 }
 
@@ -1322,6 +1379,11 @@ void btm_process_remote_ext_features_page (tACL_CONN *p_acl_cb, tBTM_SEC_DEV_REC
                 l2cu_resubmit_pending_sec_req (p_dev_rec->bd_addr);
             }
         }
+        BTM_TRACE_WARNING6 ("btm_process_remote_ext_features_page 0: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                        p_dev_rec->bd_addr[0], p_dev_rec->bd_addr[1], p_dev_rec->bd_addr[2],
+                        p_dev_rec->bd_addr[3], p_dev_rec->bd_addr[4], p_dev_rec->bd_addr[5]);
+
+        BTM_TRACE_WARNING1("btm_process_remote_ext_features_page 0: %02x", (UINT8) p_dev_rec->features[page_idx]);
         break;
 
     /* Extended Page 1 */
@@ -1340,12 +1402,18 @@ void btm_process_remote_ext_features_page (tACL_CONN *p_acl_cb, tBTM_SEC_DEV_REC
             p_dev_rec->sm4 = BTM_SM4_KNOWN;
         }
 
-        BTM_TRACE_API4 ("ext_features_complt page_num:%d f[0]:x%02x, sm4:%x, pend:%d",
+        BTM_TRACE_WARNING4 ("ext_features_complt page_num:%d f[0]:x%02x, sm4:%x, pend:%d",
                         HCI_EXT_FEATURES_PAGE_1, *(p_dev_rec->features[HCI_EXT_FEATURES_PAGE_1]),
                         p_dev_rec->sm4, req_pend);
 
         if (req_pend)
             l2cu_resubmit_pending_sec_req (p_dev_rec->bd_addr);
+
+        BTM_TRACE_WARNING6 ("btm_process_remote_ext_features_page 1: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                        p_dev_rec->bd_addr[0], p_dev_rec->bd_addr[1], p_dev_rec->bd_addr[2],
+                        p_dev_rec->bd_addr[3], p_dev_rec->bd_addr[4], p_dev_rec->bd_addr[5]);
+
+        BTM_TRACE_WARNING1("btm_process_remote_ext_features_page 1: %02x", (UINT8) p_dev_rec->features[page_idx]);
 
         break;
 
@@ -1595,30 +1663,33 @@ static void btm_establish_continue (tACL_CONN *p_acl_cb)
             BTM_SetLinkPolicy (p_acl_cb->remote_addr, &btm_cb.btm_def_link_policy);
     }
 #endif
-    p_acl_cb->link_up_issued = TRUE;
-
-    /* If anyone cares, tell him database changed */
-#if (defined(BTM_BUSY_LEVEL_CHANGE_INCLUDED) && BTM_BUSY_LEVEL_CHANGE_INCLUDED == TRUE)
-    if (btm_cb.p_bl_changed_cb)
+    if(p_acl_cb->link_up_issued == FALSE)
     {
-        evt_data.event = BTM_BL_CONN_EVT;
-        evt_data.conn.p_bda = p_acl_cb->remote_addr;
-        evt_data.conn.p_bdn = p_acl_cb->remote_name;
-        evt_data.conn.p_dc  = p_acl_cb->remote_dc;
-        evt_data.conn.p_features = p_acl_cb->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0];
+        p_acl_cb->link_up_issued = TRUE;
+
+        /* If anyone cares, tell him database changed */
+#if (defined(BTM_BUSY_LEVEL_CHANGE_INCLUDED) && BTM_BUSY_LEVEL_CHANGE_INCLUDED == TRUE)
+        if (btm_cb.p_bl_changed_cb)
+        {
+            evt_data.event = BTM_BL_CONN_EVT;
+            evt_data.conn.p_bda = p_acl_cb->remote_addr;
+            evt_data.conn.p_bdn = p_acl_cb->remote_name;
+            evt_data.conn.p_dc  = p_acl_cb->remote_dc;
+            evt_data.conn.p_features = p_acl_cb->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0];
 
 
-        (*btm_cb.p_bl_changed_cb)(&evt_data);
-    }
-    btm_acl_update_busy_level (BTM_BLI_ACL_UP_EVT);
+            (*btm_cb.p_bl_changed_cb)(&evt_data);
+        }
+        btm_acl_update_busy_level (BTM_BLI_ACL_UP_EVT);
 #else
-    if (btm_cb.p_acl_changed_cb)
-        (*btm_cb.p_acl_changed_cb) (p_acl_cb->remote_addr,
-                                    p_acl_cb->remote_dc,
-                                    p_acl_cb->remote_name,
-                                    p_acl_cb->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0],
-                                    TRUE);
+        if (btm_cb.p_acl_changed_cb)
+            (*btm_cb.p_acl_changed_cb) (p_acl_cb->remote_addr,
+                    p_acl_cb->remote_dc,
+                    p_acl_cb->remote_name,
+                    p_acl_cb->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0],
+                    TRUE);
 #endif
+    }
 }
 
 
@@ -2228,6 +2299,10 @@ void btm_acl_role_changed (UINT8 hci_status, BD_ADDR bd_addr, UINT8 new_role)
 #endif
 
     BTM_TRACE_DEBUG0 ("btm_acl_role_changed");
+    BTM_TRACE_WARNING6 ("btm_acl_role_changed: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                p_bda[0], p_bda[1], p_bda[2], p_bda[3], p_bda[4], p_bda[5]);
+    BTM_TRACE_WARNING1 ("btm_acl_role_changed: New role: %d", new_role);
+
     /* Ignore any stray events */
     if (p == NULL)
     {
@@ -2717,6 +2792,26 @@ tBTM_STATUS BTM_AclRegisterForChanges (tBTM_ACL_DB_CHANGE_CB *p_cb)
 }
 #endif
 
+/*******************************************************************************
+**
+** Function         BTM_BleRegisterForConnParamChanges
+**
+** Returns          This function is called to register a callback for when the
+**                  ACL database changes, i.e. new entry or entry deleted.
+**
+*******************************************************************************/
+tBTM_STATUS BTM_BleRegisterForConnParamChanges (tBTM_BLE_CONN_PARAMS_CB *p_cb)
+{
+    BTM_TRACE_DEBUG0 ("BTM_BleRegisterForConnParamChanges");
+    if (!p_cb)
+        btm_cb.p_ble_conn_params_cb = NULL;
+    else if (btm_cb.p_ble_conn_params_cb)
+        return(BTM_BUSY);
+    else
+        btm_cb.p_ble_conn_params_cb = p_cb;
+
+    return(BTM_SUCCESS);
+}
 /*******************************************************************************
 **
 ** Function         BTM_SetQoS
@@ -3295,7 +3390,18 @@ void btm_read_tx_power_complete (UINT8 *p, BOOLEAN is_ble)
 
     /* If there was a callback registered for read rssi, call it */
     btm_cb.devcb.p_tx_power_cmpl_cb = NULL;
+    /* this is been added to get adv tx power for LE*/
+    if(!p_cb)
+    {
+        BTM_TRACE_API0("btm_read_tx_power_complete without callback");
+#if BLE_INCLUDED == TRUE
+        STREAM_TO_UINT8  (results.hci_status, p);
+        STREAM_TO_UINT8 (results.tx_power, p);
+        btm_cb.ble_ctr_cb.inq_var.tx_power=results.tx_power;
+        BTM_TRACE_API1("btm_read_tx_power_complete assigned value: %d",results.tx_power);
+#endif
 
+    }
     if (p_cb)
     {
         STREAM_TO_UINT8  (results.hci_status, p);

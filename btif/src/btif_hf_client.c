@@ -228,6 +228,9 @@ static bt_status_t connect( bt_bdaddr_t *bd_addr )
 {
     BTIF_TRACE_EVENT1("HFP Client version is  %s", btif_hf_client_version);
     CHECK_BTHF_CLIENT_INIT();
+
+    btif_queue_remove_connect(UUID_SERVCLASS_HF_HANDSFREE, BTIF_QUEUE_CHECK_CONNECT_REQ);
+
     return btif_queue_connect(UUID_SERVCLASS_HF_HANDSFREE, bd_addr, connect_int,BTIF_QUEUE_CONNECT_EVT);
 
 }
@@ -645,6 +648,25 @@ static void  cleanup( void )
     }
 }
 
+/*******************************************************************************
+**
+** Function         send_at_cmd
+**
+** Description      Send requested AT command to rempte device.
+**
+** Returns          bt_status_t
+**
+*******************************************************************************/
+static bt_status_t send_at_cmd(int cmd,int val1,int val2,const char *arg)
+{
+    CHECK_BTHF_CLIENT_SLC_CONNECTED();
+    BTIF_TRACE_EVENT5("%s Cmd %d val1 %d val2 %d arg %s",
+            __FUNCTION__,cmd,val1,val2,arg);
+    BTA_HfClientSendAT(btif_hf_client_cb.handle, cmd, val1, val2, arg);
+
+    return BT_STATUS_SUCCESS;
+}
+
 static const bthf_client_interface_t bthfClientInterface = {
     sizeof(bthf_client_interface_t),
     .init = init,
@@ -664,6 +686,7 @@ static const bthf_client_interface_t bthfClientInterface = {
     .send_dtmf = send_dtmf,
     .request_last_voice_tag_number = request_last_voice_tag_number,
     .cleanup = cleanup,
+    .send_at_cmd = send_at_cmd,
 };
 
 static void process_ind_evt(tBTA_HF_CLIENT_IND *ind)
@@ -874,7 +897,9 @@ static void btif_hf_client_upstreams_evt(UINT16 event, char* p_param)
         case BTA_HF_CLIENT_AUDIO_CLOSE_EVT:
             HAL_CBACK(bt_hf_client_callbacks, audio_state_cb, BTHF_CLIENT_AUDIO_STATE_DISCONNECTED, &btif_hf_client_cb.connected_bda);
             break;
-
+        case BTA_HF_CLIENT_RING_INDICATION:
+            HAL_CBACK(bt_hf_client_callbacks, ring_indication_cb);
+            break;
         default:
             BTIF_TRACE_WARNING2("%s: Unhandled event: %d", __FUNCTION__, event);
             break;

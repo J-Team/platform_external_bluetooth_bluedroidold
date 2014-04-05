@@ -43,6 +43,8 @@
 #include "btif_storage.h"
 #include "btif_hd.h"
 
+extern BOOLEAN bta_dm_check_if_only_hd_connected(BD_ADDR peer_addr);
+
 /* HD request events */
 typedef enum
 {
@@ -206,8 +208,16 @@ static void btif_hd_upstreams_evt(UINT16 event, char* p_param)
         case BTA_HD_VC_UNPLUG_EVT:
             HAL_CBACK(bt_hd_callbacks, connection_state_cb, (bt_bdaddr_t*) &p_data->conn.bda,
                 BTHD_CONN_STATE_DISCONNECTED);
-
-            BTA_DmRemoveDevice((UINT8 *) &p_data->conn.bda);
+            if (bta_dm_check_if_only_hd_connected(p_data->conn.bda)) {
+                BTIF_TRACE_DEBUG1("%s: Removing bonding as only HID profile connected",
+                    __FUNCTION__);
+                BTA_DmRemoveDevice((UINT8 *) &p_data->conn.bda);
+            } else {
+                bt_bdaddr_t *bd_addr = (bt_bdaddr_t*)&p_data->conn.bda;
+                BTIF_TRACE_DEBUG1("%s: Only removing HID data as some other profiles "
+                    "connected", __FUNCTION__);
+                btif_hd_remove_device(*bd_addr);
+            }
             HAL_CBACK(bt_hd_callbacks, vc_unplug_cb);
             break;
 
@@ -479,7 +489,7 @@ static bt_status_t send_report(bthd_report_type_t type, uint8_t id, uint16_t len
 {
     tBTA_HD_REPORT report;
 
-    BTIF_TRACE_API4("%s: type=%d id=%d len=%d", __FUNCTION__, type, id, len);
+    APPL_TRACE_VERBOSE4("%s: type=%d id=%d len=%d", __FUNCTION__, type, id, len);
 
     if (!btif_hd_cb.app_registered)
     {
@@ -517,12 +527,12 @@ static bt_status_t send_report(bthd_report_type_t type, uint8_t id, uint16_t len
 **
 ** Function         report_error
 **
-** Description      Sends HANDSHAKE with error info for invalid SET_PROTOCOL
+** Description      Sends HANDSHAKE with error info for invalid SET_REPORT
 **
 ** Returns          bt_status_t
 **
 *******************************************************************************/
-static bt_status_t report_error(void)
+static bt_status_t report_error(uint8_t error)
 {
     BTIF_TRACE_API1("%s", __FUNCTION__);
 
@@ -538,7 +548,7 @@ static bt_status_t report_error(void)
         return BT_STATUS_NOT_READY;
     }
 
-    BTA_HdReportError();
+    BTA_HdReportError(error);
 
     return BT_STATUS_SUCCESS;
 }

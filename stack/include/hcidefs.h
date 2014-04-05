@@ -328,6 +328,8 @@
 #define HCI_BLE_TRANSMITTER_TEST        (0x001E | HCI_GRP_BLE_CMDS)
 #define HCI_BLE_TEST_END                (0x001F | HCI_GRP_BLE_CMDS)
 
+#define HCI_BLE_REMOTE_CONN_PARAMS_REQ_REPLY  (0x0020 | HCI_GRP_BLE_CMDS)
+#define HCI_BLE_REMOTE_CONN_PARAMS_REQ_NEGATIVE_REPLY  (0x0021 | HCI_GRP_BLE_CMDS)
 #define HCI_BLE_RESET                   (0x0020 | HCI_GRP_BLE_CMDS)
 
 /* LE supported states definition */
@@ -420,6 +422,7 @@
 #define HCI_BLE_LL_CONN_PARAM_UPD_EVT       0x03
 #define HCI_BLE_READ_REMOTE_FEAT_CMPL_EVT   0x04
 #define HCI_BLE_LTK_REQ_EVT                 0x05
+#define HCI_BLE_LL_CONN_PARAM_REQ_EVT       0x06
 
 /* ConnectionLess Broadcast events */
 #define HCI_SYNC_TRAIN_COMP_EVT             0x4F
@@ -1613,7 +1616,7 @@ typedef struct
 #define HCI_LE_FEATURE_LE_ENCRYPTION_OFF        0
 #define HCI_LE_ENCRYPTION_SUPPORTED(x) ((x)[HCI_LE_FEATURE_LE_ENCRYPTION_OFF] & HCI_LE_FEATURE_LE_ENCRYPTION_MASK)
 
-
+#define HCI_LE_FEATURE_LE_CONN_UPDATE_MASK       0x02
 /*
 **   Local Supported Commands encoding
 */

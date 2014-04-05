@@ -180,6 +180,7 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
     /* Extract the length and update the buffer header */
     STREAM_TO_UINT16 (hci_len, p);
     p_msg->offset += 4;
+    L2CAP_TRACE_VERBOSE3("%s: received packet from handle(%04x) of len (%d)", __FUNCTION__, handle, hci_len);
 
 #if (L2CAP_HOST_FLOW_CTRL == TRUE)
     /* Send ack if we hit the threshold */
@@ -347,6 +348,12 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
         STREAM_TO_UINT8  (id, p);
         STREAM_TO_UINT16 (cmd_len, p);
 
+        if(cmd_len > GKI_BUF2_SIZE || cmd_len ==0)
+        {
+             L2CAP_TRACE_WARNING0 ("L2CAP - Invalid MTU Size");
+             l2cu_send_peer_cmd_reject (p_lcb, L2CAP_CMD_REJ_MTU_EXCEEDED, id, 0, 0);
+             return;
+        }
         /* Check command length does not exceed packet length */
         if ((p_next_cmd = p + cmd_len) > p_pkt_end)
         {
@@ -470,7 +477,7 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
             p_cfg_start = p;
 
             cfg_info.flush_to_present = cfg_info.mtu_present = cfg_info.qos_present =
-                cfg_info.fcr_present = cfg_info.fcs_present = FALSE;
+            cfg_info.fcr_present = cfg_info.fcs_present = FALSE;
 
             while (p < p_cfg_end)
             {
@@ -680,7 +687,7 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
             break;
 
         case L2CAP_CMD_ECHO_REQ:
-            l2cu_send_peer_echo_rsp (p_lcb, id, NULL, 0);
+            l2cu_send_peer_echo_rsp (p_lcb, id, p, cmd_len);
             break;
 
         case L2CAP_CMD_ECHO_RSP:

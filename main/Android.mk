@@ -27,6 +27,7 @@ LOCAL_SRC_FILES += \
     ../btif/src/btif_sm.c \
     ../btif/src/btif_hf.c \
     ../btif/src/btif_hf_client.c \
+    ../btif/src/btif_multi_hf.c \
     ../btif/src/btif_av.c \
     ../btif/src/btif_rc.c \
     ../btif/src/btif_media_task.c \
@@ -48,7 +49,10 @@ LOCAL_SRC_FILES += \
     ../btif/src/btif_config.c \
     ../btif/src/btif_config_util.cpp \
     ../btif/src/btif_profile_queue.c \
-    ../btif/src/bluetoothTrack.cpp
+    ../btif/src/bluetoothTrack.cpp \
+    ../btif/src/btif_l2cap.c \
+    ../btif/src/btif_sdp.c \
+    ../wipowerif/src/wipower.c \
 
 # callouts
 LOCAL_SRC_FILES+= \
@@ -101,6 +105,7 @@ LOCAL_C_INCLUDES+= . \
 	$(LOCAL_PATH)/../embdrv/sbc/encoder/include \
 	$(LOCAL_PATH)/../audio_a2dp_hw \
 	$(LOCAL_PATH)/../utils/include \
+	$(LOCAL_PATH)/../wipowerif/include \
 	$(bdroid_C_INCLUDES) \
 	$(TARGET_OUT_HEADERS)/codecs/decoder/inc \
 	$(TOP)/frameworks/av/include/media \
@@ -132,6 +137,7 @@ LOCAL_SHARED_LIBRARIES := \
     libbt-hci \
     libbt-utils \
     libdl \
+    libutils \
     libmedia
 
 #LOCAL_WHOLE_STATIC_LIBRARIES := libbt-brcm_gki libbt-brcm_stack libbt-brcm_bta

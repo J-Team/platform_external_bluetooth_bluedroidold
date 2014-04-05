@@ -52,11 +52,30 @@ tHID_DEV_CTB   hd_cb;
 *******************************************************************************/
 void HID_DevInit(void)
 {
+    UINT8 log_level = hd_cb.trace_level;
+
     HIDD_TRACE_API1("%s", __FUNCTION__);
 
     memset(&hd_cb, 0, sizeof(tHID_DEV_CTB));
+    hd_cb.trace_level = log_level;
+}
 
-    hd_cb.trace_level = BT_TRACE_LEVEL_API;
+/*******************************************************************************
+**
+** Function         HID_DevSetTraceLevel
+**
+** Description      This function sets the trace level for HID Dev. If called with
+**                  a value of 0xFF, it simply reads the current trace level.
+**
+** Returns          the new (current) trace level
+**
+*******************************************************************************/
+UINT8 HID_DevSetTraceLevel (UINT8 new_level)
+{
+    if (new_level != 0xFF)
+        hd_cb.trace_level = new_level;
+
+    return (hd_cb.trace_level);
 }
 
 /*******************************************************************************
@@ -366,7 +385,7 @@ tHID_STATUS HID_DevAddRecord(UINT32 handle, char *p_name, char *p_description, c
 *******************************************************************************/
 tHID_STATUS HID_DevSendReport(UINT8 channel, UINT8 type, UINT8 id, UINT16 len, UINT8 *p_data)
 {
-    HIDD_TRACE_API5("%s: channel=%d type=%d id=%d len=%d", __FUNCTION__, channel, type, id, len);
+    APPL_TRACE_VERBOSE5("%s: channel=%d type=%d id=%d len=%d", __FUNCTION__, channel, type, id, len);
 
     if (channel == HID_CHANNEL_CTRL)
     {
@@ -458,7 +477,7 @@ tHID_STATUS HID_DevConnect(void)
         return HID_ERR_INVALID_PARAM;
     }
 
-    if (hd_cb.device.state != HID_DEV_NO_CONN)
+    if (hd_cb.device.state != HIDD_DEV_NO_CONN)
     {
         return HID_ERR_ALREADY_CONN;
     }
@@ -487,7 +506,7 @@ tHID_STATUS HID_DevDisconnect(void)
         return HID_ERR_INVALID_PARAM;
     }
 
-    if (hd_cb.device.state == HID_DEV_NO_CONN)
+    if (hd_cb.device.state == HIDD_DEV_NO_CONN)
     {
         return HID_ERR_NO_CONNECTION;
     }
@@ -515,16 +534,34 @@ tHID_STATUS HID_DevSetIncomingPolicy(BOOLEAN allow)
 **
 ** Function         HID_DevReportError
 **
-** Description
+** Description      Reports error for Set Report via HANDSHAKE
 **
 ** Returns          tHID_STATUS
 **
 *******************************************************************************/
-tHID_STATUS HID_DevReportError(void)
+tHID_STATUS HID_DevReportError(UINT8 error)
 {
-    HIDD_TRACE_API1("%s", __FUNCTION__);
+    UINT8 handshake_param;
 
-    return hidd_conn_send_data(0, HID_TRANS_HANDSHAKE, HID_PAR_HANDSHAKE_RSP_ERR_INVALID_REP_ID,
+    HIDD_TRACE_API2("%s: error = %d", __FUNCTION__, error);
+
+    switch (error)
+    {
+        case HID_PAR_HANDSHAKE_RSP_SUCCESS:
+        case HID_PAR_HANDSHAKE_RSP_NOT_READY:
+        case HID_PAR_HANDSHAKE_RSP_ERR_INVALID_REP_ID:
+        case HID_PAR_HANDSHAKE_RSP_ERR_UNSUPPORTED_REQ:
+        case HID_PAR_HANDSHAKE_RSP_ERR_INVALID_PARAM:
+        case HID_PAR_HANDSHAKE_RSP_ERR_UNKNOWN:
+        case HID_PAR_HANDSHAKE_RSP_ERR_FATAL:
+            handshake_param = error;
+            break;
+        default:
+            handshake_param = HID_PAR_HANDSHAKE_RSP_ERR_UNKNOWN;
+            break;
+    }
+
+    return hidd_conn_send_data(0, HID_TRANS_HANDSHAKE, handshake_param,
         0, 0, NULL);
 }
 
@@ -532,7 +569,7 @@ tHID_STATUS HID_DevReportError(void)
 **
 ** Function         HID_DevGetDevice
 **
-** Description
+** Description      Returns the BD Address of virtually cabled device
 **
 ** Returns          tHID_STATUS
 **
@@ -557,7 +594,7 @@ tHID_STATUS HID_DevGetDevice(BD_ADDR *addr)
 **
 ** Function         HID_DevSetIncomingQos
 **
-** Description
+** Description      Sets Incoming QoS values for Interrupt L2CAP Channel
 **
 ** Returns          tHID_STATUS
 **
@@ -584,7 +621,7 @@ tHID_STATUS HID_DevSetIncomingQos(UINT8 service_type, UINT32 token_rate,
 **
 ** Function         HID_DevSetOutgoingQos
 **
-** Description
+** Description      Sets Outgoing QoS values for Interrupt L2CAP Channel
 **
 ** Returns          tHID_STATUS
 **

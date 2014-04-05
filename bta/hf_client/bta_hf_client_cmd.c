@@ -23,6 +23,7 @@
 void bta_hf_client_send_at_cmd(tBTA_HF_CLIENT_DATA *p_data)
 {
     tBTA_HF_CLIENT_DATA_VAL *p_val = (tBTA_HF_CLIENT_DATA_VAL *)p_data;
+    char buf[BTA_HF_CLIENT_AT_MAX_LEN];
 
     switch(p_val->uint8_val)
     {
@@ -72,7 +73,16 @@ void bta_hf_client_send_at_cmd(tBTA_HF_CLIENT_DATA *p_data)
         case BTA_HF_CLIENT_AT_CMD_BLDN:
             bta_hf_client_send_at_bldn();
             break;
+        case BTA_HF_CLIENT_AT_CMD_NREC:
+            bta_hf_client_send_at_nrec();
+            break;
         default:
+            APPL_TRACE_ERROR0("Default case");
+            snprintf(buf,BTA_HF_CLIENT_AT_MAX_LEN,
+                "Cmd %d 1st arg %d 2nd arg %d string arg %s",
+                p_val->uint8_val, p_val->uint32_val1,
+                p_val->uint32_val2, p_val->str);
+            APPL_TRACE_ERROR1("%s ", buf);
             break;
     }
 }

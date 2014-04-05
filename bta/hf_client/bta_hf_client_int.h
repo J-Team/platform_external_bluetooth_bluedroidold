@@ -186,7 +186,6 @@ typedef struct
     UINT8                      scn;
     tBTA_HF_CLIENT_CBACK       *p_cback;        /* application callback */
     BOOLEAN                    msbc_enabled;
-    BOOLEAN                    ecnr_disable;
 } tBTA_HF_CLIENT_CB;
 
 /*****************************************************************************

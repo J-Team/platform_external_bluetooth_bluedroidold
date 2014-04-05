@@ -68,7 +68,7 @@ static BOOLEAN btif_gatts_srv_chg(tBTA_GATTS_SRV_CHG_CMD cmd,
     BOOLEAN found = FALSE;
     UINT8   i, j, idx, last_idx;
     btif_gatts_srv_chg_cb_t *p_cb = &btif_gatts_srv_chg_cb;
-
+    BTIF_TRACE_DEBUG2("%s, command: %d", __FUNCTION__, cmd);
     btif_gatts_check_init();
 
     switch (cmd)
@@ -177,10 +177,11 @@ void btif_gatts_add_bonded_dev_from_nv(BD_ADDR bda)
         if (p_cb->num_clients < BTIF_GATTS_MAX_SRV_CHG_CLT_SIZE)
         {
             bdcpy(p_cb->srv_chg[p_cb->num_clients].bda, bda);
-            p_cb->srv_chg[p_cb->num_clients].srv_changed = FALSE;
+            p_cb->srv_chg[p_cb->num_clients].srv_changed = TRUE;
             p_cb->num_clients++;
         }
     }
+    BTIF_TRACE_DEBUG2("%s: num_clients: %d", __FUNCTION__, p_cb->num_clients);
 }
 
 /*****************************************************************************
@@ -225,7 +226,7 @@ BOOLEAN bta_gatts_co_srv_chg(tBTA_GATTS_SRV_CHG_CMD cmd,
                              tBTA_GATTS_SRV_CHG_REQ *p_req,
                              tBTA_GATTS_SRV_CHG_RSP *p_rsp)
 {
-    return FALSE;
+    return btif_gatts_srv_chg(cmd, p_req, p_rsp);
 }
 
 /*******************************************************************************

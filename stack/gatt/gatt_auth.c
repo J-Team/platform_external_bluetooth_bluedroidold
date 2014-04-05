@@ -131,9 +131,16 @@ void gatt_verify_signature(tGATT_TCB *p_tcb, BT_HDR *p_buf)
 *******************************************************************************/
 void gatt_sec_check_complete(BOOLEAN sec_check_ok, tGATT_CLCB   *p_clcb, UINT8 sec_act)
 {
-    if (GKI_queue_is_empty(&p_clcb->p_tcb->pending_enc_clcb))
-        gatt_set_sec_act(p_clcb->p_tcb, GATT_SEC_NONE);
+    if(p_clcb == NULL)
+        return;
 
+    if(p_clcb->p_tcb != NULL)
+    {
+        if(GKI_queue_is_empty(&p_clcb->p_tcb->pending_enc_clcb))
+        {
+        gatt_set_sec_act(p_clcb->p_tcb, GATT_SEC_NONE);
+        }
+    }
     if (!sec_check_ok)
     {
         gatt_end_operation(p_clcb, GATT_AUTH_FAIL, NULL);
@@ -187,7 +194,7 @@ void gatt_enc_cmpl_cback(BD_ADDR bd_addr, void *p_ref_data, tBTM_STATUS result)
                     status = TRUE;
                 }
             }
-            gatt_sec_check_complete(status , p_buf->p_clcb, p_tcb->sec_act);
+            gatt_sec_check_complete(status, p_buf->p_clcb, p_tcb->sec_act);
             GKI_freebuf(p_buf);
             /* start all other pending operation in queue */
             count = p_tcb->pending_enc_clcb.count;

@@ -132,6 +132,12 @@ typedef struct
 
 /* This flag will be true if HCI_Inquiry is in progress */
 static BOOLEAN btif_dm_inquiry_in_progress = FALSE;
+typedef struct
+{
+    bt_bdaddr_t  bdaddr;
+    UINT8 search_in_progress;
+    UINT8 hogp_present;
+} btif_ble_search_in_progress_t;
 
 /************************************************************************************
 **  Static variables
@@ -143,6 +149,7 @@ static char btif_default_local_name[DEFAULT_LOCAL_NAME_MAX+1] = {'\0'};
 ******************************************************************************/
 static btif_dm_pairing_cb_t pairing_cb;
 static btif_dm_oob_cb_t     oob_cb;
+static btif_ble_search_in_progress_t ble_service_search_in_progress;
 static void btif_dm_generic_evt(UINT16 event, char* p_param);
 static void btif_dm_cb_create_bond(bt_bdaddr_t *bd_addr);
 static void btif_dm_cb_hid_remote_name(tBTM_REMOTE_DEV_NAME *p_remote_name);
@@ -160,6 +167,7 @@ static char* btif_get_default_local_name();
 ******************************************************************************/
 extern UINT16 bta_service_id_to_uuid_lkup_tbl [BTA_MAX_SERVICE_ID];
 extern bt_status_t btif_hf_execute_service(BOOLEAN b_enable);
+extern bt_status_t btif_multihf_execute_service(BOOLEAN b_enable);
 extern bt_status_t btif_av_execute_service(BOOLEAN b_enable);
 extern bt_status_t btif_hh_execute_service(BOOLEAN b_enable);
 extern bt_status_t btif_mce_execute_service(BOOLEAN b_enable);
@@ -168,9 +176,12 @@ extern int btif_hh_connect(bt_bdaddr_t *bd_addr);
 extern BOOLEAN btif_hh_check_if_sdp_required(bt_bdaddr_t *bd_addr);
 extern bt_status_t btif_hd_execute_service(BOOLEAN b_enable);
 extern void bta_gatt_convert_uuid16_to_uuid128(UINT8 uuid_128[LEN_UUID_128], UINT16 uuid_16);
+extern BOOLEAN btif_hf_is_connected();
+extern void btif_hf_close_update();
 extern BOOLEAN btif_av_is_connected();
 extern void btif_av_close_update();
 extern void btif_av_move_idle(bt_bdaddr_t bd_addr);
+extern BOOLEAN btif_is_multi_hf_supported();
 
 
 /******************************************************************************
@@ -186,7 +197,10 @@ bt_status_t btif_in_execute_service_request(tBTA_SERVICE_ID service_id,
          case BTA_HFP_SERVICE_ID:
          case BTA_HSP_SERVICE_ID:
          {
-              btif_hf_execute_service(b_enable);
+              if (btif_is_multi_hf_supported())
+                  btif_multihf_execute_service(b_enable);
+              else
+                  btif_hf_execute_service(b_enable);
          }break;
          case BTA_A2DP_SERVICE_ID:
          {
@@ -1006,6 +1020,13 @@ static void btif_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
         {
             BTIF_TRACE_DEBUG3("%s: Temporary key. Not storing. key_type=0x%x, is_temp=%d",
                 __FUNCTION__, p_auth_cmpl->key_type, pairing_cb.is_temp);
+            if(pairing_cb.is_temp == TRUE)
+            {
+                BTIF_TRACE_DEBUG1("%s: sending BT_BOND_STATE_NONE for Temp pairing",
+                        __FUNCTION__);
+                bond_state_changed(BT_STATUS_SUCCESS, &bd_addr, BT_BOND_STATE_NONE);
+                return;
+            }
         }
     }
     if (p_auth_cmpl->success)
@@ -1049,8 +1070,11 @@ static void btif_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
                 status = BT_STATUS_AUTH_REJECTED;
                 break;
 
+
             /* map the auth failure codes, so we can retry pairing if necessary */
             case HCI_ERR_AUTH_FAILURE:
+            case HCI_ERR_KEY_MISSING:
+            case HCI_ERR_LMP_RESPONSE_TIMEOUT:
                 btif_storage_remove_bonded_device(&bd_addr);
             case HCI_ERR_HOST_REJECT_SECURITY:
             case HCI_ERR_ENCRY_MODE_NOT_ACCEPTABLE:
@@ -1306,7 +1330,8 @@ static void btif_dm_search_services_evt(UINT16 event, char *p_param)
         case BTA_DM_DISC_RES_EVT:
         {
             bt_uuid_t uuid_arr[BT_MAX_NUM_UUIDS]; /* Max 32 services */
-            bt_property_t prop;
+            bt_property_t prop[2];
+            int num_properties = 0;
             uint32_t i = 0,  j = 0;
             bt_bdaddr_t bd_addr;
             bt_status_t ret;
@@ -1325,12 +1350,12 @@ static void btif_dm_search_services_evt(UINT16 event, char *p_param)
                 btif_dm_get_remote_services(&bd_addr);
                 return;
             }
-            prop.type = BT_PROPERTY_UUIDS;
-            prop.len = 0;
+            prop[0].type = BT_PROPERTY_UUIDS;
+            prop[0].len = 0;
             if ((p_data->disc_res.result == BTA_SUCCESS) && (p_data->disc_res.num_uuids > 0))
             {
-                 prop.val = p_data->disc_res.p_uuid_list;
-                 prop.len = p_data->disc_res.num_uuids * MAX_UUID_SIZE;
+                 prop[0].val = p_data->disc_res.p_uuid_list;
+                 prop[0].len = p_data->disc_res.num_uuids * MAX_UUID_SIZE;
                  for (i=0; i < p_data->disc_res.num_uuids; i++)
                  {
                       char temp[256];
@@ -1378,62 +1403,167 @@ static void btif_dm_search_services_evt(UINT16 event, char *p_param)
             if(p_data->disc_res.num_uuids != 0)
             {
                 /* Also write this to the NVRAM */
-                ret = btif_storage_set_remote_device_property(&bd_addr, &prop);
+                ret = btif_storage_set_remote_device_property(&bd_addr, &prop[0]);
                 ASSERTC(ret == BT_STATUS_SUCCESS, "storing remote services failed", ret);
+                num_properties++;
+            }
+
+            /* Remote name update */
+            if (strlen((const char *) p_data->disc_res.bd_name))
+            {
+                prop[1].type = BT_PROPERTY_BDNAME;
+                prop[1].val = p_data->disc_res.bd_name;
+                prop[1].len = strlen((char *)p_data->disc_res.bd_name);
+
+                ret = btif_storage_set_remote_device_property(&bd_addr, &prop[1]);
+                ASSERTC(ret == BT_STATUS_SUCCESS, "failed to save remote device property", ret);
+                num_properties++;
+            }
+
+            if(num_properties > 0)
+            {
                 /* Send the event to the BTIF */
                 HAL_CBACK(bt_hal_cbacks, remote_device_properties_cb,
-                                 BT_STATUS_SUCCESS, &bd_addr, 1, &prop);
+                                 BT_STATUS_SUCCESS, &bd_addr, num_properties, prop);
             }
+
         }
         break;
 
         case BTA_DM_DISC_CMPL_EVT:
-            /* fixme */
+        {
+            int device_type;
+            bt_bdaddr_t bd_addr;
+            bdstr_t bdstr;
+            bdcpy(bd_addr.address, ble_service_search_in_progress.bdaddr.address);
+            bd2str(&bd_addr, &bdstr);
+            //check if this a non LE device
+            if(!btif_config_get_int("Remote", (char const *)&bdstr,"DevType", &device_type) || device_type != BT_DEVICE_TYPE_BLE)
+            {
+                ble_service_search_in_progress.search_in_progress=FALSE;
+                ble_service_search_in_progress.hogp_present=FALSE;
+                BTIF_TRACE_DEBUG2("%s: DISC_CMPL_EVT:device_type:%d,not an LE device",  __FUNCTION__, device_type);
+                return;
+            }
+            BTIF_TRACE_DEBUG2("%s: DISC_CMPL_EVT:device_type:%d",  __FUNCTION__, device_type);
+            if(ble_service_search_in_progress.search_in_progress && !ble_service_search_in_progress.hogp_present)
+            {
+                //retrieve value from the config file and send it using HAL call back
+                bt_property_t prop;
+                bt_status_t ret;
+                uint32_t num_uuids;
+                bt_uuid_t remote_uuids[BT_MAX_NUM_UUIDS];
+
+                prop.type = BT_PROPERTY_UUIDS;
+                prop.len = sizeof(remote_uuids);
+                prop.val=&remote_uuids;
+
+                ret = btif_storage_get_remote_device_property(&bd_addr, &prop);
+                ASSERTC(ret == BT_STATUS_SUCCESS, "reading remote services failed", ret);
+                num_uuids=prop.len/(sizeof(bt_uuid_t));
+                BTIF_TRACE_DEBUG2("%s: get_property,  %d services received", __FUNCTION__,num_uuids);
+                //bonding state needs to be changed before remote prop
+                if (pairing_cb.state == BT_BOND_STATE_BONDING && !bdcmp(ble_service_search_in_progress.bdaddr.address,pairing_cb.bd_addr))
+                {
+                    BTIF_TRACE_DEBUG1("%s: bond state changed to BONDED", __FUNCTION__);
+                    bond_state_changed(BT_STATUS_SUCCESS, &bd_addr, BT_BOND_STATE_BONDED);
+                }
+
+                if(ret == BT_STATUS_SUCCESS && num_uuids>0)
+                {
+                    /* Send the event to the BTIF */
+                    BTIF_TRACE_DEBUG2("%s: sending HAL_CBACK with %d services", __FUNCTION__, (prop.len/sizeof(bt_uuid_t)));
+                    HAL_CBACK(bt_hal_cbacks, remote_device_properties_cb,
+                                 BT_STATUS_SUCCESS, &bd_addr, 1, &prop);
+                    ble_service_search_in_progress.search_in_progress=FALSE;
+                }
+            }
+            else if(ble_service_search_in_progress.hogp_present && !bdcmp(ble_service_search_in_progress.bdaddr.address,p_data->disc_ble_res.bd_addr))
+                ble_service_search_in_progress.hogp_present=FALSE;
+        }
         break;
 
 #if (defined(BLE_INCLUDED) && (BLE_INCLUDED == TRUE))
         case BTA_DM_DISC_BLE_RES_EVT:
-             BTIF_TRACE_DEBUG2("%s:, services 0x%x)", __FUNCTION__,
-                                p_data->disc_ble_res.service.uu.uuid16);
+        {
+             ble_service_search_in_progress.search_in_progress = TRUE;
+             BTIF_TRACE_DEBUG2("%s:, services 0x%x", __FUNCTION__,p_data->disc_ble_res.service.uu.uuid16);
              bt_uuid_t  uuid;
+             bt_property_t remote_properties;
+             bt_uuid_t remote_uuids[BT_MAX_NUM_UUIDS];
+             bt_status_t ret;
+             uint32_t num_uuids;
+             bt_bdaddr_t bd_addr;
+             uint32_t counter=0;
+             char temp[256];
              int i = 0;
              int j = 15;
+             bta_gatt_convert_uuid16_to_uuid128(uuid.uu,p_data->disc_ble_res.service.uu.uuid16);
+
+             while(i < j )
+             {
+                 unsigned char c = uuid.uu[j];
+                 uuid.uu[j] = uuid.uu[i];
+                 uuid.uu[i] = c;
+                 i++;
+                 j--;
+             }//uuid.uu has the discovered uuid
+             uuid_to_string(&uuid, temp);
+             BTIF_TRACE_ERROR1("btif_dm_search_services_evt uuid:%s", temp);
+             //retrieve the list of already discovered uuids
+             remote_properties.type=BT_PROPERTY_UUIDS;
+             remote_properties.len=sizeof(remote_uuids);
+             remote_properties.val=&remote_uuids;
+             bdcpy(bd_addr.address, p_data->disc_ble_res.bd_addr);
+
+             bdcpy(ble_service_search_in_progress.bdaddr.address, p_data->disc_ble_res.bd_addr);
+
+             ret=btif_storage_get_remote_device_property(&bd_addr,&remote_properties);
+             num_uuids=remote_properties.len/sizeof(bt_uuid_t);
+             BTIF_TRACE_DEBUG2("%s: no of uuids found=%d",__FUNCTION__, num_uuids);
+             //check to see if the newly discovered uuid is already present or not
+             for(counter=0;counter<num_uuids;counter++)
+             {
+                 bt_uuid_t *p_uuid = (bt_uuid_t*)remote_properties.val + counter;
+                 if(memcmp(&uuid,p_uuid,sizeof(bt_uuid_t))==0)
+                 {
+                     BTIF_TRACE_DEBUG1("%s: service already in config db",__FUNCTION__);
+                     return ;
+                 }
+             }
+             //need to add this uuid to the config file
+             if(num_uuids<BT_MAX_NUM_UUIDS)
+             {
+                 memcpy(remote_uuids+num_uuids,&uuid.uu[0],MAX_UUID_SIZE);
+                 if(num_uuids==0)
+                     remote_properties.val=&remote_uuids;
+
+                 remote_properties.len=(num_uuids+1)*sizeof(bt_uuid_t);
+                 ret=btif_storage_set_remote_device_property(&bd_addr,&remote_properties);
+                 ASSERTC(ret == BT_STATUS_SUCCESS, "saving uuids failed", ret);
+             }
+             else
+             {
+                 BTIF_TRACE_DEBUG1("%s: max number of uuids exceeded.cant add more",__FUNCTION__);
+                 return ;
+             }
+#if (defined(BTA_HH_LE_INCLUDED) && (BTA_HH_LE_INCLUDED == TRUE))
              if (p_data->disc_ble_res.service.uu.uuid16 == UUID_SERVCLASS_LE_HID)
              {
                 BTIF_TRACE_DEBUG1("%s: Found HOGP UUID",__FUNCTION__);
                 bt_property_t prop;
-                bt_bdaddr_t bd_addr;
-                char temp[256];
-                bt_status_t ret;
-
-                bta_gatt_convert_uuid16_to_uuid128(uuid.uu,p_data->disc_ble_res.service.uu.uuid16);
-
-                while(i < j )
-                {
-                    unsigned char c = uuid.uu[j];
-                    uuid.uu[j] = uuid.uu[i];
-                    uuid.uu[i] = c;
-                    i++;
-                    j--;
-                }
-
-                uuid_to_string(&uuid, temp);
-                BTIF_TRACE_ERROR1(" uuid:%s", temp);
 
                 bdcpy(bd_addr.address, p_data->disc_ble_res.bd_addr);
                 prop.type = BT_PROPERTY_UUIDS;
                 prop.val = uuid.uu;
                 prop.len = MAX_UUID_SIZE;
-
-                /* Also write this to the NVRAM */
-                ret = btif_storage_set_remote_device_property(&bd_addr, &prop);
-                ASSERTC(ret == BT_STATUS_SUCCESS, "storing remote services failed", ret);
-
                 /* Send the event to the BTIF */
                 HAL_CBACK(bt_hal_cbacks, remote_device_properties_cb,
                                  BT_STATUS_SUCCESS, &bd_addr, 1, &prop);
-
+                ble_service_search_in_progress.hogp_present=TRUE;
             }
+#endif
+        }
         break;
 #endif /* BLE_INCLUDED */
 
@@ -1589,11 +1719,34 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             btif_dm_auth_cmpl_evt(&p_data->auth_cmpl);
             break;
 
+        case BTA_DM_BLE_ADV_ENABLE_EVT:
+            BTIF_TRACE_EVENT3("btif_dm_upstreams_evt:BTA_DM_BLE_ADV_ENABLE_EVT: enable:%d, advType: %d, islimited= %d",p_data->adv_enable.advEnable, p_data->adv_enable.advType, p_data->adv_enable.isLimited);
+            if( p_data->adv_enable.advEnable)
+            {
+                if(p_data->adv_enable.advType == 0 && p_data->adv_enable.isLimited)//UND, LIMITED
+                {
+                    HAL_CBACK(bt_hal_cbacks, le_adv_enable_cb, p_data->adv_enable.advEnable, BLE_ADV_IND_LIMITED_CONNECTABLE);
+                }
+                else if(p_data->adv_enable.advType == 0 && !p_data->adv_enable.isLimited)//UND, GENERAL
+                {
+                    HAL_CBACK(bt_hal_cbacks, le_adv_enable_cb, p_data->adv_enable.advEnable, BLE_ADV_IND_GENERAL_CONNECTABLE);
+                }
+                else if(p_data->adv_enable.advType == 1)//DIR, LIMITED
+                {
+                    HAL_CBACK(bt_hal_cbacks, le_adv_enable_cb, p_data->adv_enable.advEnable, BLE_ADV_DIR_CONNECTABLE);
+                }
+            }
+            else
+            {
+                HAL_CBACK(bt_hal_cbacks, le_adv_enable_cb, p_data->adv_enable.advEnable, BLE_ADV_MODE_NONE);
+            }
+
         case BTA_DM_BOND_CANCEL_CMPL_EVT:
             if (pairing_cb.state == BT_BOND_STATE_BONDING)
             {
                 bdcpy(bd_addr.address, pairing_cb.bd_addr);
                 bond_state_changed(p_data->bond_cancel_cmpl.result, &bd_addr, BT_BOND_STATE_NONE);
+                btif_dm_remove_bond(&bd_addr);
             }
             break;
 
@@ -1667,6 +1820,12 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             BTIF_TRACE_ERROR0("Received H/W Error. ");
             /* Flush storage data */
             btif_config_flush();
+            //checking hfp is connected
+            if (btif_hf_is_connected())
+            {
+                BTIF_TRACE_DEBUG0("HFP Connection is Active disconnect before kill");
+                btif_hf_close_update();
+            }
             //checking weather music is palyed or not
             if (btif_av_is_connected())
             {
@@ -1824,7 +1983,45 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             BTIF_TRACE_DEBUG0("BTA_DM_BLE_KEY_EVT. ");
             btif_dm_ble_auth_cmpl_evt(&p_data->auth_cmpl);
             break;
+        case BTA_DM_BLE_CONN_PARAMS_EVT:
+            bdcpy(bd_addr.address, p_data->ble_conn_params.bd_addr);
+            HAL_CBACK(bt_hal_cbacks, ble_conn_params_cb, p_data->ble_conn_params.status,
+                    &bd_addr, p_data->ble_conn_params.conn_interval_min, p_data->ble_conn_params.conn_interval_max,
+                    p_data->ble_conn_params.latency, p_data->ble_conn_params.supervision_timeout, p_data->ble_conn_params.evt);
+            break;
 #endif
+
+        case BTA_DM_REM_NAME_EVT:
+            BTIF_TRACE_DEBUG0("BTA_DM_REM_NAME_EVT");
+
+            bt_bdname_t alias;
+            bt_property_t prop[1];
+            uint32_t num_properties = 0;
+            memset(&alias, 0, sizeof(alias));
+            bdcpy(bd_addr.address, p_data->rem_name_evt.bd_addr);
+            BTIF_DM_GET_REMOTE_PROP(&bd_addr, BT_PROPERTY_REMOTE_FRIENDLY_NAME,
+                    &alias, sizeof(alias), prop[num_properties]);
+
+           /* Update Remote device name only when the Alias name is not present */
+            if ((alias.name[0] == '\0') && (strlen((char *)p_data->rem_name_evt.bd_name) > 0))
+            {
+                bt_property_t properties[1];
+                bt_status_t status;
+
+                BTIF_TRACE_DEBUG1("name of device = %s", p_data->rem_name_evt.bd_name);
+                properties[0].type = BT_PROPERTY_BDNAME;
+                properties[0].val = p_data->rem_name_evt.bd_name;
+                properties[0].len = strlen((char *)p_data->rem_name_evt.bd_name);
+                bdcpy(bd_addr.address, p_data->rem_name_evt.bd_addr);
+
+                status = btif_storage_set_remote_device_property(&bd_addr, &properties[0]);
+                ASSERTC(status == BT_STATUS_SUCCESS, "failed to save remote device property",
+                    status);
+                HAL_CBACK(bt_hal_cbacks, remote_device_properties_cb,
+                                 status, &bd_addr, 1, properties);
+            }
+
+            break;
 
         case BTA_DM_AUTHORIZE_EVT:
         case BTA_DM_SIG_STRENGTH_EVT:
@@ -2093,7 +2290,8 @@ bt_status_t btif_dm_cancel_discovery(void)
 {
     BTIF_TRACE_EVENT1("%s", __FUNCTION__);
 
-    if(BTM_IsInquiryActive() || (btif_dm_inquiry_in_progress == TRUE)) {
+    if(BTM_IsInquiryActive() || (TRUE == BTM_IsRnrActive()) ||
+      (btif_dm_inquiry_in_progress == TRUE)) {
         BTIF_TRACE_EVENT1("%s : Inquiry is in progress", __FUNCTION__)
         BTA_DmSearchCancel();
         return BT_STATUS_SUCCESS;

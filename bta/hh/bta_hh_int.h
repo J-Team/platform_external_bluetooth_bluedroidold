@@ -29,6 +29,7 @@
 #include "bd.h"
 #include "utl.h"
 #include "bta_hh_api.h"
+#include <time.h>
 
 #if BTA_HH_LE_INCLUDED == TRUE
 #include "bta_gatt_api.h"
@@ -246,7 +247,7 @@ typedef struct
 #define BTA_HH_GET_LE_DEV_HDL(x)        (UINT8)(((x)  + 1) << 4)
 /* check to see if th edevice handle is a LE device handle */
 #define BTA_HH_IS_LE_DEV_HDL(x)        ((x) & 0xf0)
-#define BTA_HH_IS_LE_DEV_HDL_VALID(x)  (((x)>>4) < BTA_HH_LE_MAX_KNOWN)
+#define BTA_HH_IS_LE_DEV_HDL_VALID(x)  (((x)>>4) <= BTA_HH_LE_MAX_KNOWN)
 #endif
 
 /* device control block */
@@ -327,6 +328,10 @@ typedef struct
     UINT8                   trace_level;            /* tracing level */
     UINT8                   cnt_num;                /* connected device number */
     BOOLEAN                 w4_disable;             /* w4 disable flag */
+    UINT8 timer_created;
+    timer_t sdp_timer_id;
+    UINT32 sdp_timeout_ms;
+    BD_ADDR in_bd_addr;
 }
 tBTA_HH_CB;
 

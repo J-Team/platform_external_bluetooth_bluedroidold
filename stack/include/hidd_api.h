@@ -201,18 +201,18 @@ HID_API extern tHID_STATUS HID_DevSetIncomingPolicy(BOOLEAN allow);
 **
 ** Function         HID_DevReportError
 **
-** Description
+** Description      Reports error for Set Report via HANDSHAKE
 **
 ** Returns          tHID_STATUS
 **
 *******************************************************************************/
-HID_API extern tHID_STATUS HID_DevReportError(void);
+HID_API extern tHID_STATUS HID_DevReportError(UINT8 error);
 
 /*******************************************************************************
 **
 ** Function         HID_DevGetDevice
 **
-** Description
+** Description      Returns the BD Address of virtually cabled device
 **
 ** Returns          tHID_STATUS
 **
@@ -223,7 +223,7 @@ HID_API extern tHID_STATUS HID_DevGetDevice(BD_ADDR *addr);
 **
 ** Function         HID_DevSetIncomingQos
 **
-** Description
+** Description      Sets Incoming QoS values for Interrupt L2CAP Channel
 **
 ** Returns          tHID_STATUS
 **
@@ -236,7 +236,7 @@ HID_API extern tHID_STATUS HID_DevSetIncomingQos(UINT8 service_type, UINT32 toke
 **
 ** Function         HID_DevSetOutgoingQos
 **
-** Description
+** Description      Sets Outgoing QoS values for Interrupt L2CAP Channel
 **
 ** Returns          tHID_STATUS
 **
@@ -244,6 +244,19 @@ HID_API extern tHID_STATUS HID_DevSetIncomingQos(UINT8 service_type, UINT32 toke
 HID_API extern tHID_STATUS HID_DevSetOutgoingQos(UINT8 service_type, UINT32 token_rate,
                                             UINT32 token_bucket_size, UINT32 peak_bandwidth,
                                             UINT32 latency, UINT32 delay_variation);
+
+/*******************************************************************************
+**
+** Function         HID_DevSetTraceLevel
+**
+** Description      This function sets the trace level for HID Dev. If called with
+**                  a value of 0xFF, it simply reads the current trace level.
+**
+** Returns          the new (current) trace level
+**
+*******************************************************************************/
+HID_API extern UINT8 HID_DevSetTraceLevel (UINT8 new_level);
+
 
 #ifdef __cplusplus
 }

@@ -81,7 +81,71 @@ BOOLEAN L2CA_CancelBleConnectReq (BD_ADDR rem_bda)
         return(FALSE);
 }
 
+/*******************************************************************************
+**
+**  Function        L2CA_BleSlaveConnUpdate
+**
+**  Description     Update BLE connection parameters.
+**
+**  Parameters:     BD Address of remote
+**
+**  Return value:   TRUE if update started
+**
+*******************************************************************************/
+BOOLEAN L2CA_BleSlaveConnUpdate (tL2C_LCB *p_lcb, BD_ADDR rem_bda)
+{
+    UINT8 local_le_features;
+    UINT8 *remote_le_features;
+    UINT8 status;
+    tACL_CONN        *p_acl_cb = &btm_cb.acl_db[0];
+    int xx;
+    L2CAP_TRACE_WARNING0("L2CA_BleSlaveConnUpdate");
+    UINT16 min_int = p_lcb->min_interval;
+    UINT16 max_int = p_lcb->max_interval;
+    UINT16 latency = p_lcb->latency;
+    UINT16 timeout = p_lcb->timeout;
 
+    for (xx = 0; xx < MAX_L2CAP_LINKS; xx++, p_acl_cb++) {
+        if ((p_acl_cb->in_use) && (!memcmp (p_acl_cb->remote_addr, rem_bda, BD_ADDR_LEN))) {
+            break;
+        }
+    }
+    if(p_acl_cb) {
+        status = p_acl_cb->le_read_remote_features_complete_status;
+        if(status >= 0) {
+            //le_read_remote features is complete
+            local_le_features = btm_ble_get_local_features();
+            remote_le_features = p_acl_cb->peer_le_features;
+
+            if(status == HCI_SUCCESS) {
+                L2CAP_TRACE_WARNING0("status == HCI_SUCCESS");
+                if( ((local_le_features & HCI_LE_FEATURE_LE_CONN_UPDATE_MASK) == HCI_LE_FEATURE_LE_CONN_UPDATE_MASK)
+                    && ((*remote_le_features & HCI_LE_FEATURE_LE_CONN_UPDATE_MASK) == HCI_LE_FEATURE_LE_CONN_UPDATE_MASK)) {
+                    //BT 4.1
+                    btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle, min_int, max_int, latency, timeout, 0, 0);
+                    p_lcb->upd_disabled = UPD_SLAVE_UPDATED;
+                }
+                else {
+                    //BT 4.0 or BT4.1 which does not support Conn update from Slave
+                    l2cu_send_peer_ble_par_req (p_lcb, min_int, max_int, latency, timeout);
+                }
+            }
+            else {
+                //Command disallowed or other non success status
+                l2cu_send_peer_ble_par_req (p_lcb, min_int, max_int, latency, timeout);
+            }
+        }
+        else {
+            //Make the slave conn update request pending
+            p_lcb->upd_disabled = UPD_SLAVE_PENDING;
+            p_lcb->min_interval = min_int;
+            p_lcb->max_interval = max_int;
+            p_lcb->latency = latency;
+            p_lcb->timeout = timeout;
+        }
+    }
+    return(TRUE);
+}
 /*******************************************************************************
 **
 **  Function        L2CA_UpdateBleConnParams
@@ -96,6 +160,11 @@ BOOLEAN L2CA_CancelBleConnectReq (BD_ADDR rem_bda)
 BOOLEAN L2CA_UpdateBleConnParams (BD_ADDR rem_bda, UINT16 min_int, UINT16 max_int, UINT16 latency, UINT16 timeout)
 {
     tL2C_LCB            *p_lcb;
+    UINT8 local_le_features;
+    UINT8 *remote_le_features;
+    UINT8 *status;
+    tACL_CONN  *p_acl_cb = &btm_cb.acl_db[0];
+    int xx;
 
     /* See if we have a link control block for the remote device */
     p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda);
@@ -117,8 +186,14 @@ BOOLEAN L2CA_UpdateBleConnParams (BD_ADDR rem_bda, UINT16 min_int, UINT16 max_in
 
     if (p_lcb->link_role == HCI_ROLE_MASTER)
         btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle, min_int, max_int, latency, timeout, 0, 0);
-    else
-        l2cu_send_peer_ble_par_req (p_lcb, min_int, max_int, latency, timeout);
+    else {
+        //slave
+        p_lcb->min_interval = min_int;
+        p_lcb->max_interval = max_int;
+        p_lcb->latency = latency;
+        p_lcb->timeout = timeout;
+        L2CA_BleSlaveConnUpdate (p_lcb, rem_bda);
+    }
 
     return(TRUE);
 }
@@ -197,6 +272,7 @@ BOOLEAN L2CA_EnableUpdateBleConnParams (BD_ADDR rem_bda, BOOLEAN enable)
     return (TRUE);
 }
 
+
 /*******************************************************************************
 **
 ** Function         L2CA_HandleConnUpdateEvent
@@ -230,6 +306,33 @@ void L2CA_HandleConnUpdateEvent (UINT16 handle, UINT8 status)
     L2CAP_TRACE_DEBUG1("L2CA_HandleConnUpdateEvent: upd_disabled=%d",p_lcb->upd_disabled);
     if(p_lcb->upd_disabled == UPD_UPDATED)
         L2CA_EnableUpdateBleConnParams (rem_bda, TRUE);
+}
+
+/*******************************************************************************
+**
+** Function         L2CA_HandleConnUpdateEvent
+**
+** Description      This function enables the connection update request from remote
+**                  after a successful connection update response is received.
+**
+** Returns          void
+**
+*******************************************************************************/
+void L2CA_HandleBleConnParamsEvent (UINT16 handle, UINT8 status, UINT16 conn_interval_min,
+        UINT16 conn_interval_max, UINT16 latency, UINT16 supervision_timeout, UINT8 evt)
+{
+    tL2C_LCB *p_lcb;
+    BD_ADDR rem_bda;
+
+    L2CAP_TRACE_DEBUG0("L2CA_HandleBleConnParamsEvent");
+    /* See if we have a link control block for the remote device */
+    p_lcb = l2cu_find_lcb_by_handle(handle);
+    if(!p_lcb)
+    {
+        L2CAP_TRACE_WARNING1("L2CA_HandleBleConnParamsEvent: Invalid handle: %d", handle);
+        return;
+    }
+    btm_ble_conn_params_evt(p_lcb->remote_bd_addr, status, conn_interval_min, conn_interval_max, latency, supervision_timeout, evt);
 }
 
 
@@ -672,6 +775,26 @@ void l2c_link_processs_ble_num_bufs (UINT16 num_lm_ble_bufs)
     }
 
     l2cb.num_lm_ble_bufs = l2cb.controller_le_xmit_window = num_lm_ble_bufs;
+}
+/*******************************************************************************
+**
+** Function         L2CA_is_conn_update_api_pending
+**
+** Description      This function is called to check whether BLE conn update
+**                  request is pending from upper layers
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void L2CA_is_conn_update_api_pending (BD_ADDR  rem_bda)
+{
+    tL2C_LCB  *p_lcb;
+    p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda);
+    if(p_lcb->upd_disabled  == UPD_SLAVE_PENDING) {
+        L2CAP_TRACE_WARNING0 ("UPD_SLAVE_PENDING");
+        L2CA_BleSlaveConnUpdate (p_lcb, rem_bda);
+    }
 }
 
 #endif /* (BLE_INCLUDED == TRUE) */

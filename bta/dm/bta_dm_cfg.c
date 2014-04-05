@@ -456,7 +456,7 @@ If there's a conflict among the connected services, the setting with lowest late
 /* sniff modes: max interval, min interval, attempt, timeout */
   {800, 400, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF - A2DP */
   {400, 200, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF1 */
-  {180, 150, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF2- HD idle */
+  { 54,  30, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF2- HD idle */
   {150,  50, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF3- SCO open */
   { 54,  30, 4, 1, BTM_PM_MD_SNIFF}, /*for BTA_DM_PM_SNIFF4- HD active*/
   {800, 400, 0, 0, BTM_PM_MD_PARK}
@@ -483,7 +483,7 @@ tBTA_DM_SSR_SPEC bta_dm_ssr_spec[] =
 {
     /*max_lat, min_rmt_to, min_loc_to*/
     {0,      0, 0},     /* BTA_DM_PM_SSR0 - do not use SSR */
-    {0,      0, 2},     /* BTA_DM_PM_SSR1 - HH, can NOT share entry with any other profile,
+    {0,      0, 1600},     /* BTA_DM_PM_SSR1 - HH, can NOT share entry with any other profile,
                            seting default max latency and min remote timeout as 0,
                            and always read individual device preference from HH module */
     {1200,   2, 2},     /* BTA_DM_PM_SSR2 - others (as long as sniff is allowed)*/

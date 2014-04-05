@@ -1,4 +1,4 @@
-/******************************************************************************
+/*
  *
  *  Copyright (C) 2003-2012 Broadcom Corporation
  *
@@ -42,6 +42,7 @@
 static void bta_dm_inq_results_cb (tBTM_INQ_RESULTS *p_inq, UINT8 *p_eir);
 static void bta_dm_inq_cmpl_cb (void * p_result);
 static void bta_dm_service_search_remname_cback (BD_ADDR bd_addr, DEV_CLASS dc, BD_NAME bd_name);
+static void bta_dm_rem_name_cback (BD_ADDR bd_addr, DEV_CLASS dc, BD_NAME bd_name);
 static void bta_dm_remname_cback (tBTM_REMOTE_DEV_NAME *p_remote_name);
 static void bta_dm_find_services ( BD_ADDR bd_addr);
 static void bta_dm_discover_next_device(void);
@@ -53,11 +54,14 @@ static UINT8 bta_dm_new_link_key_cback(BD_ADDR bd_addr, DEV_CLASS dev_class, BD_
 static UINT8 bta_dm_authentication_complete_cback(BD_ADDR bd_addr, DEV_CLASS dev_class,BD_NAME bd_name, int result);
 static void bta_dm_local_name_cback(BD_ADDR bd_addr);
 static BOOLEAN bta_dm_check_av(UINT16 event);
+static void bta_dm_set_services(void);
 #if (BTM_BUSY_LEVEL_CHANGE_INCLUDED == TRUE)
 static void bta_dm_bl_change_cback (tBTM_BL_EVENT_DATA *p_data);
 #else
 static void bta_dm_acl_change_cback (BD_ADDR p_bda, DEV_CLASS p_dc, BD_NAME p_bdn, UINT8 *features, BOOLEAN is_new);
 #endif
+static void bta_dm_ble_conn_params_cback (BD_ADDR p_bda, UINT8 status, UINT16 conn_interval_min, UINT16 conn_interval_max,
+        UINT16 latency, UINT16 supervision_timeout, UINT8 evt);
 static void bta_dm_policy_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id, BD_ADDR peer_addr);
 
 /* Extended Inquiry Response */
@@ -106,6 +110,7 @@ static void bta_dm_gattc_callback(tBTA_GATTC_EVT event, tBTA_GATTC *p_data);
     #endif
 static void bta_dm_observe_results_cb (tBTM_INQ_RESULTS *p_inq, UINT8 *p_eir);
 static void bta_dm_observe_cmpl_cb (void * p_result);
+static void bta_dm_le_visibility_cback(UINT8 event, UINT8 advenable, UINT8 islimited);
 
 #ifndef BTA_DM_BLE_ADV_CHNL_MAP
 #define BTA_DM_BLE_ADV_CHNL_MAP (BTM_BLE_ADV_CHNL_37|BTM_BLE_ADV_CHNL_38|BTM_BLE_ADV_CHNL_39)
@@ -252,6 +257,20 @@ static void bta_dm_app_ready_timer_cback (TIMER_LIST_ENT *p_tle)
 #define bta_dm_app_ready_timer_cback (x)
 #endif
 
+
+static void bta_dm_le_visibility_cback(UINT8 event, UINT8 advenable, UINT8 islimited)
+{
+    tBTA_DM_SEC sec_event;
+    memset(&sec_event.adv_enable, 0, sizeof ( tBTA_DM_ADV_ENABLE_CMPL));
+
+    sec_event.adv_enable.advEnable=advenable;
+    sec_event.adv_enable.advType=event;
+    sec_event.adv_enable.isLimited=islimited;
+    APPL_TRACE_WARNING3("bta_dm_le_visibility_cback, event=%d, advenable: %d, is_limited=%d", event, advenable, islimited);
+    if(bta_dm_cb.p_sec_cback)
+        bta_dm_cb.p_sec_cback(BTA_DM_BLE_ADV_ENABLE_EVT, &sec_event);
+}
+
 /*******************************************************************************
 **
 ** Function         bta_dm_enable
@@ -280,6 +299,9 @@ void bta_dm_enable(tBTA_DM_MSG *p_data)
 
     /* first, register our callback to SYS HW manager */
     bta_sys_hw_register( BTA_SYS_HW_BLUETOOTH, bta_dm_sys_hw_cback );
+
+    /* Register callback with btm layer for remote name */
+    BTM_SecAddRmtNameNotifyCallback(&bta_dm_rem_name_cback);
 
     /* make sure security callback is saved - if no callback, do not erase the previous one,
     it could be an error recovery mechanism */
@@ -381,6 +403,7 @@ static void bta_dm_sys_hw_cback( tBTA_SYS_HW_EVT status )
             BTM_BleLoadLocalKeys(BTA_BLE_LOCAL_KEY_TYPE_ID, (tBTM_BLE_LOCAL_KEYS *)&id_key);
         }
         bta_dm_search_cb.conn_id = BTA_GATT_INVALID_CONN_ID;
+        BTM_BleRegisterForConnParamChanges(bta_dm_ble_conn_params_cback);
 #endif
 
         BTM_SecRegister((tBTM_APPL_INFO*)&bta_security);
@@ -440,6 +463,25 @@ static void bta_dm_sys_hw_cback( tBTA_SYS_HW_EVT status )
 
 }
 
+/*******************************************************************************
+**
+** Function         bta_dm_ble_send_conn_update
+**
+** Description      This function sets the AFH first and
+**                  last disable channel, so channels within
+**                  that range are disabled.
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void bta_dm_ble_send_conn_update (tBTA_DM_MSG *p_data)
+{
+    BD_ADDR bd_addr;
+    L2CA_UpdateBleConnParams(p_data->ble_send_conn_update.bd_addr, p_data->ble_send_conn_update.interval_min,
+            p_data->ble_send_conn_update.interval_max, p_data->ble_send_conn_update.latency,
+            p_data->ble_send_conn_update.supervision_timeout);
+}
 
 /*******************************************************************************
 **
@@ -459,6 +501,9 @@ void bta_dm_disable (tBTA_DM_MSG *p_data)
     /* disable all active subsystems */
     bta_sys_disable(BTA_SYS_HW_BLUETOOTH);
 
+    /* De-register callback with btm layer for remote name */
+    BTM_SecDeleteRmtNameNotifyCallback(&bta_dm_rem_name_cback);
+
     BTM_SetDiscoverability(BTM_NON_DISCOVERABLE, 0, 0);
     BTM_SetConnectability(BTM_NON_CONNECTABLE, 0, 0);
 
@@ -466,6 +511,11 @@ void bta_dm_disable (tBTA_DM_MSG *p_data)
     bta_dm_disable_search_and_disc();
     bta_dm_cb.disabling = TRUE;
 
+#if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
+    BD_ADDR dummy_bda;
+    bdsetany(dummy_bda);
+    BTM_BleUpdateBgConnDev(FALSE,dummy_bda);
+#endif
 
     if(BTM_GetNumAclLinks()==0)
     {
@@ -600,6 +650,108 @@ void bta_dm_set_visibility (tBTA_DM_MSG *p_data)
     if (p_data->set_visibility.pair_mode != BTA_DM_IGNORE || p_data->set_visibility.conn_paired_only != BTA_DM_IGNORE)
         BTM_SetPairableMode((BOOLEAN)(!(bta_dm_cb.disable_pair_mode)),bta_dm_cb.conn_paired_only);
 
+}
+
+
+
+/*******************************************************************************
+**
+** Function         bta_dm_set_visibility
+**
+** Description      Sets discoverability, connectability  for LE devices
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void bta_dm_set_ble_visibility (tBTA_DM_MSG *p_data)
+{
+    bta_dm_set_services();
+    //set the adv directed mode
+    BTM_BleSetConnMode(p_data->set_LEvisibility.is_directed);
+    btm_ble_set_visibility((UINT16)p_data->set_LEvisibility.conn_mode, (UINT16) p_data->set_LEvisibility.disc_mode, (tBTM_BLE_ADV_ENABLE_CBACK *)bta_dm_le_visibility_cback);
+}
+
+/*******************************************************************************
+**
+** Function         bta_dm_set_advData_Mask
+**
+** Description      set data masks for adv and scan resp
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void bta_dm_set_advData_Mask(tBTA_DM_MSG *p_data)
+{
+    tBTM_BLE_AD_MASK dMask=0;
+    if(p_data->ble_set_adv_mask.maskType==BTA_DM_ADV_MASK)
+        BTM_SetAdvDataMask(p_data->ble_set_adv_mask.mask);
+    else if(p_data->ble_set_adv_mask.maskType==BTA_DM_SCAN_RESP_MASK)
+        BTM_SetScanRespMask(p_data->ble_set_adv_mask.mask);
+}
+
+
+/*******************************************************************************
+**
+** Function         bta_dm_set_services
+**
+** Description      function to set the services to be displayed in adv
+**                       is being currently called internally only
+**
+** Returns          void
+**
+*******************************************************************************/
+
+static void bta_dm_set_services(void)
+{
+    APPL_TRACE_API0("bta_dm_set_services");
+    UINT16 *servuuid;
+    UINT16 lCount=0;
+
+    GATTS_RetrieveServiceList(&servuuid, &lCount);
+    APPL_TRACE_API1("Service Count received: %d",lCount);
+    APPL_TRACE_API1("First Service Retrieved a uuid: 0x%0x",*servuuid);
+
+    BTM_SetAdvServices(servuuid,lCount);
+}
+
+/*******************************************************************************
+**
+** Function         bta_dm_set_adv_data
+**
+** Description      This function sets the manufacturer specific data
+**                  for adv data and scan response data
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+
+void bta_dm_set_adv_data(tBTA_DM_MSG *p_data)
+{
+    APPL_TRACE_API0("bta_dm_set_adv_data");
+    if(p_data->ble_set_adv_data.data_mask & BTM_BLE_AD_BIT_MANU)
+        BTM_SetManuData(p_data->ble_set_adv_data.p_adv_cfg->manu.p_val,p_data->ble_set_adv_data.p_adv_cfg->manu.len);
+}
+
+/*******************************************************************************
+**
+** Function         bta_dm_set_service_data
+**
+** Description      This function sets the manufacturer specific data
+**                  for adv data and scan response data
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+
+void bta_dm_set_service_data(tBTA_DM_MSG *p_data)
+{
+    APPL_TRACE_API0("bta_dm_set_service_data");
+    if(p_data->ble_set_adv_data.data_mask & BTM_BLE_AD_BIT_SERVICE_DATA)
+        BTM_SetServiceData(p_data->ble_set_adv_data.p_adv_cfg->service_data.p_val,p_data->ble_set_adv_data.p_adv_cfg->service_data.len);
 }
 
 
@@ -1960,6 +2112,8 @@ void bta_dm_sdp_result (tBTA_DM_MSG *p_data)
 void bta_dm_search_cmpl (tBTA_DM_MSG *p_data)
 {
     APPL_TRACE_DEBUG0("bta_dm_search_cmpl");
+    tBTA_DM_SEARCH   result;
+
 
 #if (BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE)
     utl_freebuf((void **)&bta_dm_search_cb.p_srvc_uuid);
@@ -1968,7 +2122,10 @@ void bta_dm_search_cmpl (tBTA_DM_MSG *p_data)
     if (p_data->hdr.layer_specific == BTA_DM_API_DI_DISCOVER_EVT)
         bta_dm_di_disc_cmpl(p_data);
     else
-        bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, NULL);
+    {
+        bdcpy (result.disc_ble_res.bd_addr, bta_dm_search_cb.peer_bdaddr);
+        bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, &result);
+    }
 }
 
 /*******************************************************************************
@@ -2655,6 +2812,35 @@ static void bta_dm_inq_cmpl_cb (void * p_result)
 
 /*******************************************************************************
 **
+** Function         bta_dm_rem_name_cback
+**
+** Description      Remote name call back from BTM when remote name is retrieved successfully
+**
+** Returns          void
+**
+*******************************************************************************/
+static void bta_dm_rem_name_cback (BD_ADDR bd_addr, DEV_CLASS dc, BD_NAME bd_name)
+{
+    tBTA_DM_SEC             sec_event;
+
+    APPL_TRACE_DEBUG1("bta_dm_rem_name_cback name=<%s>", bd_name);
+
+    if (strlen((char*)bd_name) > (BD_NAME_LEN-1))
+    {
+        sec_event.rem_name_evt.bd_name[(BD_NAME_LEN-1)] = 0;
+    }
+    bdcpy(sec_event.rem_name_evt.bd_addr, bd_addr);
+    BCM_STRNCPY_S((char*)sec_event.rem_name_evt.bd_name, sizeof(BD_NAME), (char*)bd_name,
+        (BD_NAME_LEN-1));
+    if( bta_dm_cb.p_sec_cback )
+    {
+        bta_dm_cb.p_sec_cback(BTA_DM_REM_NAME_EVT, &sec_event);
+    }
+
+}
+
+/*******************************************************************************
+**
 ** Function         bta_dm_service_search_remname_cback
 **
 ** Description      Remote name call back from BTM during service discovery
@@ -2851,6 +3037,8 @@ static void bta_dm_pinname_cback (void *p_data)
     {
         /* Retrieved saved device class and bd_addr */
         bdcpy(sec_event.pin_req.bd_addr, bta_dm_cb.pin_bd_addr);
+        /* Retrieve the secure flag of pairing also */
+        sec_event.pin_req.secure = bta_dm_cb.secure;
         BTA_COPY_DEVICE_CLASS(sec_event.pin_req.dev_class, bta_dm_cb.pin_dev_class);
 
         if (p_result && p_result->status == BTM_SUCCESS)
@@ -2893,6 +3081,8 @@ static UINT8 bta_dm_pin_cback (BD_ADDR bd_addr, DEV_CLASS dev_class, BD_NAME bd_
     if (bd_name[0] == 0)
     {
         bta_dm_cb.pin_evt = BTA_DM_PIN_REQ_EVT;
+        /* Store the secure flag of pairing */
+        bta_dm_cb.secure = secure;
         bdcpy(bta_dm_cb.pin_bd_addr, bd_addr);
         BTA_COPY_DEVICE_CLASS(bta_dm_cb.pin_dev_class, dev_class);
         if ((BTM_ReadRemoteDeviceName(bd_addr, bta_dm_pinname_cback)) == BTM_CMD_STARTED)
@@ -3329,6 +3519,35 @@ static void bta_dm_acl_change_cback (BD_ADDR p_bda, DEV_CLASS p_dc, BD_NAME p_bd
 #endif
 /*******************************************************************************
 **
+** Function         bta_dm_ble_conn_params_cback
+**
+** Description      Callback from btm when acl connection goes up or down
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+static void bta_dm_ble_conn_params_cback (BD_ADDR p_bda, UINT8 status, UINT16 conn_interval_min,
+        UINT16 conn_interval_max, UINT16 latency, UINT16 supervision_timeout, UINT8 evt)
+{
+    tBTA_DM_BLE_CONN_PARAMS_CHANGE * p_msg;
+    if ((p_msg = (tBTA_DM_BLE_CONN_PARAMS_CHANGE *) GKI_getbuf(sizeof(tBTA_DM_BLE_CONN_PARAMS_CHANGE))) != NULL)
+    {
+        bdcpy (p_msg->bd_addr, p_bda);
+        p_msg->hdr.event = BTA_DM_BLE_CONN_PARAMS_CHANGE_EVT;
+        p_msg->status = status;
+        p_msg->conn_interval_min = conn_interval_min;
+        p_msg->conn_interval_max = conn_interval_max;
+        p_msg->latency = latency;
+        p_msg->supervision_timeout = supervision_timeout;
+        p_msg->evt = evt;
+        bta_sys_sendmsg(p_msg);
+
+    }
+
+}
+/*******************************************************************************
+**
 ** Function         bta_dm_rs_cback
 **
 ** Description      Receives the role switch complete event
@@ -3588,6 +3807,36 @@ void bta_dm_acl_change(tBTA_DM_MSG *p_data)
     }
 
     bta_dm_adjust_roles(TRUE);
+}
+
+/*******************************************************************************
+**
+** Function         bta_dm_ble_conn_params
+**
+** Description      Process BTA_DM_BLE_CONN_PARAMS_CHANGE_EVT
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void bta_dm_ble_conn_params_change(tBTA_DM_MSG *p_data)
+{
+    tBTA_DM_SEC conn;
+    switch(p_data->ble_conn_params.hdr.event)
+    {
+        case BTA_DM_BLE_CONN_PARAMS_CHANGE_EVT:
+            if( bta_dm_cb.p_sec_cback ) {
+                conn.ble_conn_params.status = p_data->ble_conn_params.status;
+                conn.ble_conn_params.conn_interval_min = p_data->ble_conn_params.conn_interval_min;
+                conn.ble_conn_params.conn_interval_max = p_data->ble_conn_params.conn_interval_max;
+                conn.ble_conn_params.latency = p_data->ble_conn_params.latency;
+                conn.ble_conn_params.supervision_timeout = p_data->ble_conn_params.supervision_timeout;
+                bdcpy (conn.ble_conn_params.bd_addr, p_data->ble_conn_params.bd_addr);
+                if( bta_dm_cb.p_sec_cback )
+                    bta_dm_cb.p_sec_cback(BTA_DM_BLE_CONN_PARAMS_EVT, &conn);
+            }
+        break;
+   }
 }
 
 /*******************************************************************************
@@ -4551,6 +4800,12 @@ void bta_dm_encrypt_cback(BD_ADDR bd_addr, void *p_ref_data, tBTM_STATUS result)
         case BTM_BUSY:
             bta_status = BTA_BUSY;
             break;
+        case BTM_BAD_RF:
+            bta_status = BTA_BAD_RF;
+            break;
+        case BTM_DEVICE_TIMEOUT:
+            bta_status = BTA_TIMEOUT;
+            break;
         default:
             bta_status = BTA_FAILURE;
             break;
@@ -4617,6 +4872,28 @@ void bta_dm_set_afh_channels(tBTA_DM_MSG * p_data)
 void bta_dm_set_afh_channel_assesment (tBTA_DM_MSG * p_data)
 {
     BTM_SetAfhChannelAssessment(p_data->set_afh_channel_assessment.enable_or_disable);
+}
+
+BOOLEAN bta_dm_check_if_only_hd_connected(BD_ADDR peer_addr)
+{
+    UINT8 j;
+    APPL_TRACE_DEBUG1("bta_dm_check_if_only_hd_connected: count(%d)",
+        bta_dm_conn_srvcs.count);
+
+    for(j=0; j<bta_dm_conn_srvcs.count; j++)
+    {
+        /* check if other profiles other than hid are connected */
+        if((bta_dm_conn_srvcs.conn_srvc[j].id != BTA_ID_HD)
+            && !bdcmp(bta_dm_conn_srvcs.conn_srvc[j].peer_bdaddr, peer_addr)) {
+            APPL_TRACE_DEBUG1("bta_dm_check_if_only_hd_connected: "
+                "Some other profile (id=%d) except HID connected",
+                bta_dm_conn_srvcs.conn_srvc[j].id);
+            return FALSE;
+        }
+    }
+
+    APPL_TRACE_DEBUG0("bta_dm_check_if_only_hd_connected: returning TRUE");
+    return TRUE;
 }
 
 #if (BLE_INCLUDED == TRUE)
@@ -4995,6 +5272,36 @@ void bta_dm_ble_set_conn_params (tBTA_DM_MSG *p_data)
 
 /*******************************************************************************
 **
+** Function         bta_dm_ble_set_conn_params
+**
+** Description      This function set the preferred adv parameters.
+**
+** Parameters:
+**
+*******************************************************************************/
+void bta_dm_ble_set_adv_params (tBTA_DM_MSG *p_data)
+{
+    APPL_TRACE_DEBUG0("bta_dm_ble_set_adv_params Entry");
+
+    if(bdcmp(p_data->ble_set_adv_params.p_dir_bda->bda, bd_addr_null))
+    {
+        //BTM_BleSetConnMode(TRUE);
+        APPL_TRACE_DEBUG0("BD_addr for direct mode is not null");
+    }
+    else
+    {
+        //BTM_BleSetConnMode(FALSE);
+        APPL_TRACE_DEBUG0("BD_addr for direct mode is  null");
+    }
+    BTM_BleSetAdvParams(p_data->ble_set_adv_params.adv_int_min,
+                             p_data->ble_set_adv_params.adv_int_max,
+                             p_data->ble_set_adv_params.p_dir_bda,
+                             BTM_BLE_DEFAULT_ADV_CHNL_MAP);
+}
+
+
+/*******************************************************************************
+**
 ** Function         bta_dm_ble_set_scan_params
 **
 ** Description      This function set the preferred connection scan parameters.
@@ -5077,22 +5384,6 @@ void bta_dm_ble_observe_with_filter(tBTA_DM_MSG *p_data)
 
 /*******************************************************************************
 **
-** Function         bta_dm_ble_set_scan_params
-**
-** Description      This function set the adv parameters.
-**
-** Parameters:
-**
-*******************************************************************************/
-void bta_dm_ble_set_adv_params (tBTA_DM_MSG *p_data)
-{
-    BTM_BleSetAdvParams(p_data->ble_set_adv_params.adv_int_min,
-                        p_data->ble_set_adv_params.adv_int_max,
-                        p_data->ble_set_adv_params.p_dir_bda,
-                        BTA_DM_BLE_ADV_CHNL_MAP);
-}
-/*******************************************************************************
-**
 ** Function         bta_dm_ble_set_adv_config
 **
 ** Description      This function set the customized ADV data configuration
@@ -5109,7 +5400,7 @@ void bta_dm_ble_set_adv_config (tBTA_DM_MSG *p_data)
 
 #if ((defined BTA_GATT_INCLUDED) &&  (BTA_GATT_INCLUDED == TRUE))
 #ifndef BTA_DM_GATT_CLOSE_DELAY_TOUT
-#define BTA_DM_GATT_CLOSE_DELAY_TOUT    3000
+#define BTA_DM_GATT_CLOSE_DELAY_TOUT    30000
 #endif
 
 /*******************************************************************************
@@ -5426,9 +5717,9 @@ static void bta_dm_gattc_callback(tBTA_GATTC_EVT event, tBTA_GATTC *p_data)
             break;
 
         case BTA_GATTC_CLOSE_EVT:
-            APPL_TRACE_DEBUG1("BTA_GATTC_CLOSE_EVT reason = %d", p_data->close.reason);
+            APPL_TRACE_DEBUG2("BTA_GATTC_CLOSE_EVT reason = %d, search.state = %d", p_data->close.reason, bta_dm_search_cb.state);
             /* in case of disconnect before search is completed */
-            if ( (bta_dm_search_cb.state != BTA_DM_SEARCH_IDLE) &&
+            if ( (bta_dm_search_cb.state != BTA_DM_SEARCH_IDLE) && (bta_dm_search_cb.state != BTA_DM_SEARCH_ACTIVE) &&
                  !memcmp(p_data->close.remote_bda, bta_dm_search_cb.peer_bdaddr, BD_ADDR_LEN))
             {
                 bta_dm_gatt_disc_complete((UINT16)BTA_GATT_INVALID_CONN_ID,  (tBTA_GATT_STATUS) BTA_GATT_ERROR);

@@ -346,7 +346,7 @@ extern void bta_hd_send_report_act(tBTA_HD_DATA *p_data)
     UINT8 channel;
     UINT8 report_id;
 
-    APPL_TRACE_API1("%s", __FUNCTION__);
+    APPL_TRACE_VERBOSE1("%s", __FUNCTION__);
 
     channel = p_report->use_intr ? HID_CHANNEL_INTR : HID_CHANNEL_CTRL ;
     report_id = (bta_hd_cb.use_report_id  || bta_hd_cb.boot_mode) ? p_report->id : 0x00;
@@ -369,11 +369,12 @@ extern void bta_hd_send_report_act(tBTA_HD_DATA *p_data)
 *******************************************************************************/
 extern void bta_hd_report_error_act(tBTA_HD_DATA *p_data)
 {
+    tBTA_HD_REPORT_ERR *p_report = (tBTA_HD_REPORT_ERR *) p_data;
     tHID_STATUS ret;
 
-    APPL_TRACE_API1("%s", __FUNCTION__);
+    APPL_TRACE_API2("%s: error = %d", __FUNCTION__, p_report->error);
 
-    ret = HID_DevReportError();
+    ret = HID_DevReportError(p_report->error);
 
     if (ret != HID_SUCCESS)
     {

@@ -126,7 +126,7 @@ typedef struct
     BD_ADDR         active_remote_addr;     /* remote address used on this connection */
     UINT8           active_remote_addr_type;         /* local device address type for this connection */
     BD_FEATURES     peer_le_features;       /* Peer LE Used features mask for the device */
-
+    UINT8           le_read_remote_features_complete_status;
 #endif
 
 } tACL_CONN;
@@ -212,6 +212,11 @@ typedef struct
 
 #endif  /* BLE_INCLUDED */
 
+#if HCI_RAW_CMD_INCLUDED == TRUE
+    tBTM_RAW_CMPL_CB     *p_hci_evt_cb;       /* Callback function to be called when
+                                                HCI event is received successfully */
+#endif
+
 #define BTM_DEV_STATE_WAIT_RESET_CMPLT  0
 #define BTM_DEV_STATE_WAIT_AFTER_RESET  1
 #define BTM_DEV_STATE_READY             2
@@ -273,6 +278,14 @@ typedef struct
 } tINQ_DB_ENT;
 
 
+enum
+{
+    INQ_NONE,
+    INQ_LE_OBSERVE,
+    INQ_GENERAL
+};
+typedef UINT8 tBTM_INQ_TYPE;
+
 typedef struct
 {
     tBTM_CMPL_CB *p_remname_cmpl_cb;
@@ -290,6 +303,7 @@ typedef struct
     UINT16           inq_scan_period;
     UINT16           inq_scan_type;
     UINT16           page_scan_type;        /* current page scan type */
+    tBTM_INQ_TYPE    scan_type;
 
     BD_ADDR          remname_bda;           /* Name of bd addr for active remote name request */
 #define BTM_RMT_NAME_INACTIVE       0
@@ -300,6 +314,8 @@ typedef struct
 
     tBTM_CMPL_CB    *p_inq_cmpl_cb;
     tBTM_INQ_RESULTS_CB *p_inq_results_cb;
+    tBTM_CMPL_CB    *p_inq_ble_cmpl_cb;     /*completion callback exclusively for LE Observe*/
+    tBTM_INQ_RESULTS_CB *p_inq_ble_results_cb;/*results callback exclusively for LE observe*/
     tBTM_CMPL_CB    *p_inqfilter_cmpl_cb;   /* Called (if not NULL) after inquiry filter completed */
     tBTM_INQ_DB_CHANGE_CB *p_inq_change_cb; /* Inquiry database changed callback    */
     UINT32           inq_counter;           /* Counter incremented each time an inquiry completes */
@@ -813,6 +829,7 @@ typedef struct
     BT_OCTET8               enc_rand;   /* received rand value from LTK request*/
     UINT16                  ediv;       /* received ediv value from LTK request */
     UINT8                   key_size;
+    tBTM_BLE_CONN_PARAMS_CB *p_ble_conn_params_cb;    /* Callback for when BLE Conn params*/
 #endif
 
                                             /* Packet types supported by the local device */
@@ -962,6 +979,10 @@ extern void         btm_acl_timeout (TIMER_LIST_ENT  *p_tle);
 extern void         btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                                      UINT16 hci_handle, UINT8 link_role, UINT8 is_le_link);
 extern void         btm_acl_removed (BD_ADDR bda);
+extern void         btm_ble_conn_params_evt(BD_ADDR remote_bd_addr, UINT8 status,
+                                            UINT16 conn_interval_min,
+                                            UINT16 conn_interval_max, UINT16 latency,
+                                            UINT16 supervision_timeout, UINT8 evt);
 extern void         btm_acl_device_down (void);
 extern void         btm_acl_update_busy_level (tBTM_BLI_EVENT event);
 extern void         btm_acl_link_key_change (UINT16 handle, UINT8 status);
@@ -1064,8 +1085,13 @@ extern void btm_read_white_list_size_complete(UINT8 *p, UINT16 evt_len);
 extern void btm_ble_add_2_white_list_complete(UINT8 status);
 extern void btm_ble_remove_from_white_list_complete(UINT8 *p, UINT16 evt_len);
 extern void btm_ble_clear_white_list_complete(UINT8 *p, UINT16 evt_len);
+extern UINT8 btm_ble_get_local_features(void);
 #endif  /* BLE_INCLUDED */
 
+/* HCI event handler */
+#if HCI_RAW_CMD_INCLUDED == TRUE
+extern void btm_hci_event(UINT8 *p, UINT8 event_code, UINT8 param_len);
+#endif
 /* Vendor Specific Command complete evt handler */
 extern void btm_vsc_complete (UINT8 *p, UINT16 cc_opcode, UINT16 evt_len,
                               tBTM_CMPL_CB *p_vsc_cplt_cback);
@@ -1101,6 +1127,8 @@ extern tBTM_STATUS  btm_sec_l2cap_access_req (BD_ADDR bd_addr, UINT16 psm,
 extern tBTM_STATUS  btm_sec_mx_access_request (BD_ADDR bd_addr, UINT16 psm, BOOLEAN is_originator,
                                         UINT32 mx_proto_id, UINT32 mx_chan_id,
                                         tBTM_SEC_CALLBACK *p_callback, void *p_ref_data);
+
+extern  tBTM_STATUS btm_sec_execute_procedure (tBTM_SEC_DEV_REC *p_dev_rec);
 extern void  btm_sec_conn_req (UINT8 *bda, UINT8 *dc);
 extern void btm_create_conn_cancel_complete (UINT8 *p);
 extern void btm_proc_lsto_evt(UINT16 handle, UINT16 timeout);

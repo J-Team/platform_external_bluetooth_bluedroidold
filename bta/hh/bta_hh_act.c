@@ -33,11 +33,12 @@
 #include "l2c_api.h"
 #include "bta_hh_int.h"
 #include "bta_hh_co.h"
+#include "btm_ble_api.h"
 
 /*****************************************************************************
 **  Constants
 *****************************************************************************/
-
+#define DEFAULT_SDP_CMP_TIMEOUT    2000
 
 /*****************************************************************************
 **  Local Function prototypes
@@ -50,6 +51,9 @@ static tBTA_HH_STATUS bta_hh_get_trans_status(UINT32 result);
 static char* bta_hh_get_w4_event(UINT16 event);
 static char * bta_hh_hid_event_name(UINT16 event);
 #endif
+static void bta_hh_start_sdp_cmp_timer(void);
+static void bta_hh_stop_sdp_cmp_timer(void);
+
 
 /*****************************************************************************
 **  Action Functions
@@ -74,6 +78,7 @@ void bta_hh_api_enable(tBTA_HH_DATA *p_data)
 
     memset(&bta_hh_cb, 0, sizeof(tBTA_HH_CB));
 
+    bta_hh_cb.sdp_timeout_ms = DEFAULT_SDP_CMP_TIMEOUT;
     HID_HostSetSecurityLevel("", p_data->api_enable.sec_mask);
 
     /* Register with L2CAP */
@@ -124,6 +129,9 @@ void bta_hh_api_disable(void)
     if (bta_hh_cb.p_cback == NULL)
         return;
 
+    /* Stop the SDP Complete Timer if active */
+    bta_hh_stop_sdp_cmp_timer();
+
     /* no live connection, signal DISC_CMPL_EVT directly */
     if (!bta_hh_cb.cnt_num)
     {
@@ -168,11 +176,8 @@ void bta_hh_disc_cmpl(void)
         status = BTA_HH_ERR;
 
 #if (BTA_HH_LE_INCLUDED == TRUE)
-    if (!bta_hh_cb.w4_disable)
-    {
-        bta_hh_le_deregister();
-        return;
-    }
+    bta_hh_le_deregister();
+    return;
 #endif
 
     bta_hh_cleanup_disable(status);
@@ -569,6 +574,8 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     conn.status = p_cb->status;
     conn.le_hid = p_cb->is_le_device;
     conn.scps_supported = p_cb->scps_supported;
+    if(p_cb->scps_supported)
+        BTA_HhUpdateLeScanParam(dev_handle,BTM_BLE_SCAN_SLOW_INT_1,BTM_BLE_SCAN_SLOW_WIN_1);
 
     if (!p_cb->is_le_device)
 #endif
@@ -638,6 +645,11 @@ void bta_hh_open_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
         p_cb->incoming_conn = TRUE;
         /* store the handle here in case sdp fails - need to disconnect */
         p_cb->incoming_hid_handle = dev_handle;
+        /* Store the BD address of unknown incoming device */
+        bdcpy(bta_hh_cb.in_bd_addr, p_cb->addr);
+        /* Start timer for sdp to be completed by DM Layer. On timer expiry
+         * perform SDP on unknown incoming connection */
+        bta_hh_start_sdp_cmp_timer();
     }
 
     return;
@@ -1157,7 +1169,7 @@ void bta_hh_write_dev_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
         }
         else if (p_data->api_sndcmd.param == BTA_HH_CTRL_SUSPEND)
         {
-			bta_sys_sco_close(BTA_ID_HH, p_cb->app_id, p_cb->addr);
+            bta_sys_sco_close(BTA_ID_HH, p_cb->app_id, p_cb->addr);
         }
         else if (p_data->api_sndcmd.param == BTA_HH_CTRL_EXIT_SUSPEND)
         {
@@ -1187,6 +1199,8 @@ void bta_hh_sdp_cmp_after_bonding_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data
 #if BTA_HH_DEBUG
     APPL_TRACE_EVENT0 ("bta_hh_sdp_cmp_after_bonding_act");
 #endif
+    /* Stop the SDP Complete Timer, since SDP completed by DM Layer */
+    bta_hh_stop_sdp_cmp_timer();
 
     if (p_cb->incoming_conn &&
             bdcmp(p_cb->addr, p_data->sdp_cmp_after_bonding.bd_addr) == 0)
@@ -1206,6 +1220,105 @@ void bta_hh_sdp_cmp_after_bonding_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data
 /*****************************************************************************
 **  Static Function
 *****************************************************************************/
+/*******************************************************************************
+**
+** Function        bta_hh_sdp_timeout
+**
+** Description     Timeout for sdp to be completed by DM layer. Trigger SDP from BTA HID Layer
+**
+** Returns         None
+**
+*******************************************************************************/
+static void bta_hh_sdp_timeout(union sigval arg)
+{
+    APPL_TRACE_DEBUG0("bta_hh_sdp_timeout");
+
+    if (bdcmp(bta_hh_cb.in_bd_addr, bd_addr_null))
+    {
+        APPL_TRACE_DEBUG0("bta_hh_sdp_timeout: performing sdp on incoming conn");
+        BTA_HhSdpCmplAfterBonding(bta_hh_cb.in_bd_addr);
+        bdcpy(bta_hh_cb.in_bd_addr, bd_addr_null);
+    }
+}
+
+/*******************************************************************************
+**
+** Function        bta_hh_start_sdp_cmp_timer
+**
+** Description     Launch SDP Complete Timer
+**
+** Returns         None
+**
+*******************************************************************************/
+static void bta_hh_start_sdp_cmp_timer(void)
+{
+    int status;
+    struct itimerspec ts;
+    struct sigevent se;
+
+    APPL_TRACE_DEBUG0("bta_hh_start_sdp_cmp_timer");
+
+    if (bta_hh_cb.timer_created == FALSE)
+    {
+        se.sigev_notify = SIGEV_THREAD;
+        se.sigev_value.sival_ptr = &bta_hh_cb.sdp_timer_id;
+        se.sigev_notify_function = bta_hh_sdp_timeout;
+        se.sigev_notify_attributes = NULL;
+
+        status = timer_create(CLOCK_MONOTONIC, &se, &bta_hh_cb.sdp_timer_id);
+
+        if (status == 0)
+            bta_hh_cb.timer_created = TRUE;
+    }
+
+    if (bta_hh_cb.timer_created == TRUE)
+    {
+        ts.it_value.tv_sec = bta_hh_cb.sdp_timeout_ms/1000;
+        ts.it_value.tv_nsec = 1000*(bta_hh_cb.sdp_timeout_ms%1000);
+        ts.it_interval.tv_sec = 0;
+        ts.it_interval.tv_nsec = 0;
+
+        APPL_TRACE_DEBUG0("bta_hh_start_sdp_cmp_timer: starting timer");
+        status = timer_settime(bta_hh_cb.sdp_timer_id, 0, &ts, 0);
+        if (status == -1)
+        {
+            APPL_TRACE_ERROR1("%s: Failed to set SDP Complete timeout", __FUNCTION__);
+        }
+    }
+}
+
+/*******************************************************************************
+**
+** Function        bta_hh_stop_sdp_cmp_timer
+**
+** Description     Stops sdp complete timer
+**
+** Returns         None
+**
+*******************************************************************************/
+static void bta_hh_stop_sdp_cmp_timer(void)
+{
+    int status;
+    struct itimerspec ts;
+
+    APPL_TRACE_DEBUG0("bta_hh_stop_sdp_cmp_timer");
+
+    if (bta_hh_cb.timer_created == TRUE)
+    {
+        ts.it_value.tv_sec = 0;
+        ts.it_value.tv_nsec = 0;
+        ts.it_interval.tv_sec = 0;
+        ts.it_interval.tv_nsec = 0;
+        APPL_TRACE_DEBUG0("bta_hh_stop_sdp_cmp_timer: stopping timer");
+
+        status = timer_settime(bta_hh_cb.sdp_timer_id, 0, &ts, 0);
+        if (status == -1)
+        {
+            APPL_TRACE_ERROR1("%s: Failed to set SDP Complete timeout", __FUNCTION__);
+        }
+    }
+}
+
 /*******************************************************************************
 **
 ** Function         bta_hh_cback

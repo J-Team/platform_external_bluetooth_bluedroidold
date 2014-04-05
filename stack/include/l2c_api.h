@@ -1156,6 +1156,19 @@ L2C_API extern BOOLEAN L2CA_EnableUpdateBleConnParams (BD_ADDR rem_bda, BOOLEAN 
 *******************************************************************************/
 L2C_API void L2CA_HandleConnUpdateEvent (UINT16 handle, UINT8 status);
 
+/*******************************************************************************
+**
+** Function         L2CA_HandleBleConnParamsEvent
+**
+** Description      This function enables the connection update request from remote
+**                  after a successful connection update response is received.
+**
+** Returns          void
+**
+*******************************************************************************/
+L2C_API void L2CA_HandleBleConnParamsEvent (UINT16 handle, UINT8 status, UINT16 conn_interval_min,
+                                            UINT16 conn_interval_max, UINT16 latency, UINT16 supervision_timeout,
+                                            UINT8 evt);
 
 /*******************************************************************************
 **

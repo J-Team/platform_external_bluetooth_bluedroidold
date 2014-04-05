@@ -86,6 +86,7 @@
 #define HCI_COMMAND_STATUS_EVT      0x0F
 #define HCI_READ_BUFFER_SIZE        0x1005
 #define HCI_LE_READ_BUFFER_SIZE     0x2002
+#define L2CAP_MAX_DATA_SIZE         0x8000
 
 /******************************************************************************
 **  Local type definitions
@@ -384,6 +385,20 @@ static HC_BT_HDR *acl_rx_frame_buffer_alloc (void)
             }
             p_return_buf = NULL;
         }
+        /* check for invalid hci length */
+        if(hci_len < L2CAP_HEADER_SIZE)
+        {
+            ALOGE("Invalid HCI length of L2CAP packet: return NULL");
+            return NULL;
+        }
+
+        /* check for invalid l2cap payload length */
+        if ((total_len < (hci_len - L2CAP_HEADER_SIZE)) || ((total_len + HCI_ACL_PREAMBLE_SIZE + \
+                L2CAP_HEADER_SIZE + BT_HC_HDR_SIZE) > L2CAP_MAX_DATA_SIZE))
+        {
+            ALOGE("Invalid L2CAP payload length: return NULL");
+            return NULL;
+        }
 
         /* Allocate a buffer for message */
         if (bt_hc_cbacks)
@@ -419,9 +434,15 @@ static HC_BT_HDR *acl_rx_frame_buffer_alloc (void)
         {
             /* Packet continuation and found the original rx buffer */
             uint8_t *p_f = p = (uint8_t *)(p_return_buf + 1) + 2;
-
+            uint16_t tot_l2c_len;
             STREAM_TO_UINT16 (total_len, p);
+            STREAM_TO_UINT16 (tot_l2c_len, p);
 
+            if((tot_l2c_len - (total_len - L2CAP_HEADER_SIZE)) < hci_len)
+            {
+                ALOGE("Invalid L2CAP Con't Packet: return NULL ");
+                return NULL;
+            }
             /* Update HCI header of first segment (base buffer) with new len */
             total_len += hci_len;
             UINT16_TO_STREAM (p_f, total_len);
@@ -765,6 +786,16 @@ uint16_t hci_mct_receive_evt_msg(void)
            /* Next, wait for next message */
            p_cb->rcv_state = MCT_RX_NEWMSG_ST;
            continue_fetch_looping = FALSE;
+
+           /*set the SSR flag */
+           if(property_set("bluetooth.isSSR", "1") < 0)
+           {
+               ALOGE("SSR: hci_mct.c:SSR case : error in setting up property\n ");
+           }
+           else
+           {
+               ALOGE("SSR: hci_mct.c:setting the SSR property to 1 DONE New\n ");
+           }
         }
         else
 #endif
@@ -977,7 +1008,15 @@ uint16_t hci_mct_receive_acl_msg(void)
                 /* ACL data lengths are 16-bits */
                 msg_len = p_cb->preload_buffer[3];
                 msg_len = (msg_len << 8) + p_cb->preload_buffer[2];
-
+                if(msg_len == 0) {
+                    p_cb->rcv_state = MCT_RX_NEWMSG_ST;
+                    continue_fetch_looping = FALSE;
+                    break;
+                } else if (msg_len <= 2) {
+                    p_cb->rcv_len = msg_len;
+                    p_cb->rcv_state = MCT_RX_IGNORE_ST;
+                    break;
+                }
                 if (msg_len && (p_cb->preload_count == 4))
                 {
                     /* Check if this is a start packet */

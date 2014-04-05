@@ -183,7 +183,7 @@ static void bta_ag_sco_disc_cback(UINT16 sco_idx)
     BT_HDR  *p_buf;
     UINT16  handle = 0;
 
-    APPL_TRACE_DEBUG3 ("bta_ag_sco_disc_cback(): sco_idx: 0x%x  p_cur_scb: 0x%08x  sco.state: %d", sco_idx, bta_ag_cb.sco.p_curr_scb, bta_ag_cb.sco.state);
+    APPL_TRACE_IMP3 ("bta_ag_sco_disc_cback(): sco_idx: 0x%x  p_cur_scb: 0x%08x  sco.state: %d", sco_idx, bta_ag_cb.sco.p_curr_scb, bta_ag_cb.sco.state);
 
     APPL_TRACE_DEBUG4 ("bta_ag_sco_disc_cback(): scb[0] addr: 0x%08x  in_use: %u  sco_idx: 0x%x  sco state: %u",
                        &bta_ag_cb.scb[0], bta_ag_cb.scb[0].in_use, bta_ag_cb.scb[0].sco_idx, bta_ag_cb.scb[0].state);
@@ -295,7 +295,7 @@ static BOOLEAN bta_ag_remove_sco(tBTA_AG_SCB *p_scb, BOOLEAN only_active)
         {
             status = BTM_RemoveSco(p_scb->sco_idx);
 
-            APPL_TRACE_DEBUG2("ag remove sco: inx 0x%04x, status:0x%x", p_scb->sco_idx, status);
+            APPL_TRACE_IMP2("ag remove sco: inx 0x%04x, status:0x%x", p_scb->sco_idx, status);
 
             if (status == BTM_CMD_STARTED)
             {
@@ -342,7 +342,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA *p
             /* If no other SCO active, allow this one */
             if (!bta_ag_cb.sco.p_curr_scb)
             {
-                APPL_TRACE_EVENT1("bta_ag_esco_connreq_cback: Accept Conn Request (sco_inx 0x%04x)", sco_inx);
+                APPL_TRACE_IMP1("bta_ag_esco_connreq_cback: Accept Conn Request (sco_inx 0x%04x)", sco_inx);
                 bta_ag_sco_conn_rsp(p_scb, &p_data->conn_evt);
 
                 bta_ag_cb.sco.state = BTA_AG_SCO_OPENING_ST;
@@ -351,7 +351,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA *p
             }
             else    /* Begin a transfer: Close current SCO before responding */
             {
-                APPL_TRACE_DEBUG0("bta_ag_esco_connreq_cback: Begin XFER");
+                APPL_TRACE_IMP0("bta_ag_esco_connreq_cback: Begin XFER");
                 bta_ag_cb.sco.p_xfer_scb = p_scb;
                 bta_ag_cb.sco.conn_data = p_data->conn_evt;
                 bta_ag_cb.sco.state = BTA_AG_SCO_OPEN_XFER_ST;
@@ -581,7 +581,7 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
         }
     }
 
-    APPL_TRACE_API4("ag create sco: orig %d, inx 0x%04x, status 0x%x, pkt types 0x%04x",
+    APPL_TRACE_IMP4("ag create sco: orig %d, inx 0x%04x, status 0x%x, pkt types 0x%04x",
                       is_orig, p_scb->sco_idx, status, params.packet_types);
 }
 
@@ -669,15 +669,15 @@ static void bta_ag_sco_event(tBTA_AG_SCB *p_scb, UINT8 event)
 #if (BTM_SCO_HCI_INCLUDED == TRUE )
     BT_HDR  *p_buf;
 #endif
-#if BTA_AG_SCO_DEBUG == TRUE
-    UINT8   in_state = p_sco->state;
+    UINT8       in_state = p_sco->state;
 
-    APPL_TRACE_EVENT5("BTA ag sco evt (hdl 0x%04x): State %d (%s), Event %d (%s)",
+#if BTA_AG_SCO_DEBUG == TRUE
+    APPL_TRACE_IMP5("BTA ag sco evt (hdl 0x%04x): State %d (%s), Event %d (%s)",
                         p_scb->sco_idx,
                         p_sco->state, bta_ag_sco_state_str(p_sco->state),
                         event, bta_ag_sco_evt_str(event));
 #else
-    APPL_TRACE_EVENT3("BTA ag sco evt (hdl 0x%04x): State %d, Event %d",
+    APPL_TRACE_IMP3("BTA ag sco evt (hdl 0x%04x): State %d, Event %d",
                       p_scb->sco_idx, p_sco->state, event);
 #endif
 
@@ -1150,7 +1150,7 @@ static void bta_ag_sco_event(tBTA_AG_SCB *p_scb, UINT8 event)
                     bta_ag_remove_sco(p_sco->p_xfer_scb, FALSE);
 
 #if (BTM_WBS_INCLUDED == TRUE )
-                    if (p_scb->peer_codecs != BTA_AG_CODEC_NONE)
+                    if (p_sco->p_xfer_scb->peer_codecs != BTA_AG_CODEC_NONE)
                     {
                         /* start codec negotiation */
                         p_sco->state = BTA_AG_SCO_CODEC_ST;
@@ -1238,15 +1238,19 @@ static void bta_ag_sco_event(tBTA_AG_SCB *p_scb, UINT8 event)
         default:
             break;
     }
-#if BTA_AG_SCO_DEBUG == TRUE
+
     if (p_sco->state != in_state)
     {
-        APPL_TRACE_EVENT3("BTA AG SCO State Change: [%s] -> [%s] after Event [%s]",
-                      bta_ag_sco_state_str(in_state),
-                      bta_ag_sco_state_str(p_sco->state),
-                      bta_ag_sco_evt_str(event));
+        #if BTA_AG_SCO_DEBUG == TRUE
+            APPL_TRACE_IMP3("BTA AG SCO State Change: [%s] -> [%s] after Event [%s]",
+                          bta_ag_sco_state_str(in_state),
+                          bta_ag_sco_state_str(p_sco->state),
+                          bta_ag_sco_evt_str(event));
+        #else
+           APPL_TRACE_IMP3("BTA AG SCO State Change: [%d] -> [%d] after Event [%d]",
+                              in_state, p_sco->state, event);
+        #endif
     }
-#endif
 
 #if (BTM_WBS_INCLUDED == TRUE )
     if (p_cn_scb)
@@ -1357,7 +1361,7 @@ void bta_ag_sco_close(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     if (p_scb->sco_idx != BTM_INVALID_SCO_INDEX)
 #endif
     {
-        APPL_TRACE_DEBUG1("bta_ag_sco_close: sco_inx = %d", p_scb->sco_idx);
+        APPL_TRACE_IMP1("bta_ag_sco_close: sco_inx = %d", p_scb->sco_idx);
         bta_ag_sco_event(p_scb, BTA_AG_SCO_CLOSE_E);
     }
 }

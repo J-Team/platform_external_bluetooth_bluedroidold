@@ -19,8 +19,14 @@
 #include "bluetoothTrack.h"
 #include <media/AudioTrack.h>
 
+//#define DUMP_PCM_DATA TRUE
+#if (defined(DUMP_PCM_DATA) && (DUMP_PCM_DATA == TRUE))
+FILE *outputPcmSampleFile;
+char outputFilename [50] = "/data/misc/bluedroid/output_sample.pcm";
+#endif
+
 struct BluetoothTrack {
-    android::AudioTrack* mTrack;
+    android::sp<android::AudioTrack> mTrack;
 };
 
 typedef struct BluetoothTrack BluetoothTrack;
@@ -30,29 +36,34 @@ BluetoothTrack *track = NULL;
 int btCreateTrack(int trackFreq, int channelType)
 {
     int ret = -1;
-    track = new BluetoothTrack;
+    if (track == NULL)
+        track = new BluetoothTrack;
     track->mTrack = NULL;
     track->mTrack = new android::AudioTrack(AUDIO_STREAM_MUSIC, trackFreq, AUDIO_FORMAT_PCM_16_BIT,
-            channelType, 0, (audio_output_flags_t)0, NULL, NULL, 0, 0, android::AudioTrack::TRANSFER_SYNC);
-    if (track->mTrack == NULL) {
-                delete track;
-        track = NULL;
-        return ret;
-    }
-    if (track->mTrack->initCheck() != 0) {
+            channelType, (int)0, (audio_output_flags_t)AUDIO_OUTPUT_FLAG_FAST, NULL, NULL, 0, 0, android::AudioTrack::TRANSFER_SYNC);
+    if (track->mTrack == NULL)
+    {
         delete track;
         track = NULL;
         return ret;
     }
+    if (track->mTrack->initCheck() != 0)
+    {
+        delete track;
+        track = NULL;
+        return ret;
+    }
+#if (defined(DUMP_PCM_DATA) && (DUMP_PCM_DATA == TRUE))
+    outputPcmSampleFile = fopen(outputFilename, "ab");
+#endif
     ret = 0;
     track->mTrack->setVolume(1, 1);
-    track->mTrack->start();
     return ret;
 }
 
 void btStartTrack()
 {
-    if ((track) && (track->mTrack))
+    if ((track != NULL) && (track->mTrack.get() != NULL))
     {
         track->mTrack->start();
     }
@@ -61,23 +72,33 @@ void btStartTrack()
 
 void btDeleteTrack()
 {
-    if ((track) && (track->mTrack))
+    if ((track != NULL) && (track->mTrack.get() != NULL))
     {
+        track->mTrack.clear();
         delete track;
+        track = NULL;
     }
+#if (defined(DUMP_PCM_DATA) && (DUMP_PCM_DATA == TRUE))
+    if (outputPcmSampleFile)
+    {
+        fclose(outputPcmSampleFile);
+    }
+    outputPcmSampleFile = NULL;
+#endif
 }
 
 void btPauseTrack()
 {
-    if ((track) && (track->mTrack))
+    if ((track != NULL) && (track->mTrack.get() != NULL))
     {
         track->mTrack->pause();
+        track->mTrack->flush();
     }
 }
 
 void btStopTrack()
 {
-    if ((track) && (track->mTrack))
+    if ((track != NULL) && (track->mTrack.get() != NULL))
     {
         track->mTrack->stop();
     }
@@ -86,8 +107,14 @@ void btStopTrack()
 int btWriteData(void *audioBuffer, int bufferlen)
 {
     int retval = -1;
-    if ((track) && (track->mTrack))
+    if ((track != NULL) && (track->mTrack.get() != NULL))
     {
+#if (defined(DUMP_PCM_DATA) && (DUMP_PCM_DATA == TRUE))
+        if (outputPcmSampleFile)
+        {
+            fwrite ((audioBuffer), 1, (size_t)bufferlen, outputPcmSampleFile);
+        }
+#endif
         retval = track->mTrack->write(audioBuffer, (size_t)bufferlen);
     }
     return retval;
