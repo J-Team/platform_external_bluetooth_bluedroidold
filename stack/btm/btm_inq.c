@@ -739,12 +739,6 @@ UINT16 BTM_IsInquiryActive (void)
     return(btm_cb.btm_inq_vars.inq_active);
 }
 
-UINT8 BTM_IsRnrActive (void)
-{
-    BTM_TRACE_API0 ("BTM_IsRNRActive");
-
-    return (btm_cb.btm_inq_vars.remname_active);
-}
 
 
 /*******************************************************************************
