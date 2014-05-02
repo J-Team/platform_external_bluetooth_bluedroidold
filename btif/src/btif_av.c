@@ -274,8 +274,9 @@ static BOOLEAN btif_av_state_idle_handler(btif_sm_event_t event, void *p_data)
 {
     tBTA_AV *p_bta_data;
 
-    BTIF_TRACE_IMP3("%s event:%s flags %x", __FUNCTION__,
+    BTIF_TRACE_DEBUG3("%s event:%s flags %x", __FUNCTION__,
                      dump_av_sm_event_name(event), btif_av_cb.flags);
+
     switch (event)
     {
         case BTIF_SM_ENTER_EVT:
@@ -338,7 +339,6 @@ static BOOLEAN btif_av_state_idle_handler(btif_sm_event_t event, void *p_data)
                   /* change state to open/idle based on the status */
                   btif_sm_change_state(btif_av_cb.sm_handle, BTIF_AV_STATE_OPENED);
              }
-             btif_queue_advance();
              break;
 
         case BTA_AV_PENDING_EVT:
