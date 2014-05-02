@@ -69,7 +69,7 @@ BOOLEAN l2c_link_hci_conn_req (BD_ADDR bd_addr)
     /* If we don't have one, create one and accept the connection. */
     if (!p_lcb)
     {
-        p_lcb = l2cu_allocate_lcb (bd_addr, FALSE);
+        p_lcb = l2cu_allocate_lcb (bd_addr, FALSE, LT_BR_EDR);
         if (!p_lcb)
         {
             btsnd_hcic_reject_conn (bd_addr, HCI_ERR_HOST_REJECT_RESOURCES);
@@ -676,6 +676,138 @@ void l2c_info_timeout (tL2C_LCB *p_lcb)
     }
 }
 
+
+/*******************************************************************************
+**
+** Function         l2c_ble_link_adjust_allocation
+**
+** Description      This function is called when a link is created or removed
+**                  to calculate the amount of packets each link may send to
+**                  the HCI without an ack coming back.
+**
+**                  Currently, this is a simple allocation, dividing the
+**                  number of Controller Packets by the number of links. In
+**                  the future, QOS configuration should be examined.
+**
+** Returns          void
+**
+*******************************************************************************/
+void l2c_ble_link_adjust_allocation (void)
+{
+    UINT16      qq, yy, qq_remainder;
+    tL2C_LCB    *p_lcb;
+    UINT16      hi_quota, low_quota;
+    UINT16      num_lowpri_links = 0;
+    UINT16      num_hipri_links  = 0;
+    UINT16      controller_xmit_quota = l2cb.num_lm_ble_bufs;
+    UINT16      high_pri_link_quota = L2CAP_HIGH_PRI_MIN_XMIT_QUOTA_A;
+
+    /* If no links active, reset buffer quotas and controller buffers */
+    if (l2cb.num_links_active == 0)
+    {
+        l2cb.controller_xmit_window = l2cb.num_lm_acl_bufs;
+        l2cb.controller_le_xmit_window = l2cb.num_lm_ble_bufs;
+        l2cb.round_robin_quota = l2cb.round_robin_unacked = 0;
+        l2cb.round_robin_ble_quota = l2cb.round_robin_ble_unacked = 0;
+        return;
+    }
+
+    /* First, count the links */
+    for (yy = 0, p_lcb = &l2cb.lcb_pool[0]; yy < MAX_L2CAP_LINKS; yy++, p_lcb++)
+    {
+        if (p_lcb->in_use && p_lcb->is_ble_link)
+        {
+            if (p_lcb->acl_priority == L2CAP_PRIORITY_HIGH)
+                num_hipri_links++;
+            else
+                num_lowpri_links++;
+        }
+    }
+
+    /* now adjust high priority link quota */
+    low_quota = num_lowpri_links ? 1 : 0;
+    while ( (num_hipri_links * high_pri_link_quota + low_quota) > controller_xmit_quota )
+        high_pri_link_quota--;
+
+    /* Work out the xmit quota and buffer quota high and low priorities */
+    hi_quota  = num_hipri_links * high_pri_link_quota;
+    low_quota = (hi_quota < controller_xmit_quota) ? controller_xmit_quota - hi_quota : 1;
+
+    /* Work out and save the HCI xmit quota for each low priority link */
+
+    /* If each low priority link cannot have at least one buffer */
+    if (num_lowpri_links > low_quota)
+    {
+        l2cb.round_robin_ble_quota = low_quota;
+        qq = qq_remainder = 0;
+    }
+    /* If each low priority link can have at least one buffer */
+    else if (num_lowpri_links > 0)
+    {
+        l2cb.round_robin_ble_quota = 0;
+        l2cb.round_robin_ble_unacked = 0;
+        qq = low_quota / num_lowpri_links;
+        qq_remainder = low_quota % num_lowpri_links;
+    }
+    /* If no low priority link */
+    else
+    {
+        l2cb.round_robin_ble_quota = 0;
+        l2cb.round_robin_ble_unacked = 0;
+        qq = qq_remainder = 0;
+    }
+
+    L2CAP_TRACE_EVENT5 ("l2c_ble_link_adjust_allocation  num_hipri: %u  num_lowpri: %u  low_quota: %u  round_robin_ble_quota: %u  qq: %u",
+                        num_hipri_links, num_lowpri_links, low_quota,
+                        l2cb.round_robin_ble_quota, qq);
+
+    /* Now, assign the quotas to each link */
+    for (yy = 0, p_lcb = &l2cb.lcb_pool[0]; yy < MAX_L2CAP_LINKS; yy++, p_lcb++)
+    {
+        if (p_lcb->in_use && p_lcb->is_ble_link)
+        {
+            if (p_lcb->acl_priority == L2CAP_PRIORITY_HIGH)
+            {
+                p_lcb->link_xmit_quota   = high_pri_link_quota;
+            }
+            else
+            {
+                /* Safety check in case we switched to round-robin with something outstanding */
+                /* if sent_not_acked is added into round_robin_unacked then don't add it again */
+                /* l2cap keeps updating sent_not_acked for exiting from round robin */
+                if (( p_lcb->link_xmit_quota > 0 )&&( qq == 0 ))
+                    l2cb.round_robin_ble_unacked += p_lcb->sent_not_acked;
+
+                p_lcb->link_xmit_quota   = qq;
+                if (qq_remainder > 0)
+                {
+                    p_lcb->link_xmit_quota++;
+                    qq_remainder--;
+                }
+            }
+
+#if L2CAP_HOST_FLOW_CTRL
+            p_lcb->link_ack_thresh = L2CAP_HOST_FC_ACL_BUFS / l2cb.num_links_active;
+#endif
+            L2CAP_TRACE_EVENT3 ("l2c_ble_link_adjust_allocation LCB %d   Priority: %d  XmitQuota: %d",
+                                yy, p_lcb->acl_priority, p_lcb->link_xmit_quota);
+
+            L2CAP_TRACE_EVENT2 ("        SentNotAcked: %d  RRUnacked: %d",
+                                p_lcb->sent_not_acked, l2cb.round_robin_ble_unacked);
+
+            /* There is a special case where we have readjusted the link quotas and  */
+            /* this link may have sent anything but some other link sent packets so  */
+            /* so we may need a timer to kick off this link's transmissions.         */
+            if ( (p_lcb->link_state == LST_CONNECTED)
+              && (p_lcb->link_xmit_data_q.count)
+              && (p_lcb->sent_not_acked < p_lcb->link_xmit_quota) )
+                btu_start_timer (&p_lcb->timer_entry, BTU_TTYPE_L2CAP_LINK, L2CAP_LINK_FLOW_CONTROL_TOUT);
+        }
+    }
+
+}
+
+
 /*******************************************************************************
 **
 ** Function         l2c_link_adjust_allocation
@@ -705,14 +837,16 @@ void l2c_link_adjust_allocation (void)
     if (l2cb.num_links_active == 0)
     {
         l2cb.controller_xmit_window = l2cb.num_lm_acl_bufs;
+        l2cb.controller_le_xmit_window = l2cb.num_lm_ble_bufs;
         l2cb.round_robin_quota = l2cb.round_robin_unacked = 0;
+        l2cb.round_robin_ble_quota = l2cb.round_robin_ble_unacked = 0;
         return;
     }
 
     /* First, count the links */
     for (yy = 0, p_lcb = &l2cb.lcb_pool[0]; yy < MAX_L2CAP_LINKS; yy++, p_lcb++)
     {
-        if (p_lcb->in_use)
+        if (p_lcb->in_use && (p_lcb->is_ble_link == FALSE))
         {
             if (p_lcb->acl_priority == L2CAP_PRIORITY_HIGH)
                 num_hipri_links++;
@@ -761,7 +895,7 @@ void l2c_link_adjust_allocation (void)
     /* Now, assign the quotas to each link */
     for (yy = 0, p_lcb = &l2cb.lcb_pool[0]; yy < MAX_L2CAP_LINKS; yy++, p_lcb++)
     {
-        if (p_lcb->in_use)
+        if (p_lcb->in_use && (p_lcb->is_ble_link == FALSE))
         {
             if (p_lcb->acl_priority == L2CAP_PRIORITY_HIGH)
             {
@@ -1145,13 +1279,16 @@ void l2c_link_check_send_pkts (tL2C_LCB *p_lcb, tL2C_CCB *p_ccb, BT_HDR *p_buf)
             /* If controller window is full, nothing to do */
             if ( (l2cb.controller_xmit_window == 0
 #if (BLE_INCLUDED == TRUE)
-                  && !p_lcb->is_ble_link
+                  && (p_lcb->is_ble_link == FALSE)
 #endif
                 )
 #if (BLE_INCLUDED == TRUE)
                 || (p_lcb->is_ble_link && l2cb.controller_le_xmit_window == 0 )
-#endif
+              || ((l2cb.round_robin_ble_unacked >= l2cb.round_robin_ble_quota)
+              && (l2cb.round_robin_unacked >= l2cb.round_robin_quota)) )
+#else
               || (l2cb.round_robin_unacked >= l2cb.round_robin_quota) )
+#endif
                 break;
 
             /* Check for wraparound */
@@ -1184,9 +1321,10 @@ void l2c_link_check_send_pkts (tL2C_LCB *p_lcb, tL2C_CCB *p_ccb, BT_HDR *p_buf)
 
         /* If we finished without using up our quota, no need for a safety check */
 #if (BLE_INCLUDED == TRUE)
-        if ( ((l2cb.controller_xmit_window > 0 && !p_lcb->is_ble_link) ||
-             (l2cb.controller_le_xmit_window > 0 && p_lcb->is_ble_link))
-          && (l2cb.round_robin_unacked < l2cb.round_robin_quota) )
+        if ( ((l2cb.controller_xmit_window > 0 && !p_lcb->is_ble_link) &&
+             (l2cb.round_robin_unacked < l2cb.round_robin_quota) )
+          && ((l2cb.controller_le_xmit_window > 0 && p_lcb->is_ble_link) &&
+             (l2cb.round_robin_ble_unacked < l2cb.round_robin_ble_quota)) )
 #else
         if ( (l2cb.controller_xmit_window > 0)
           && (l2cb.round_robin_unacked < l2cb.round_robin_quota) )
@@ -1269,7 +1407,10 @@ static BOOLEAN l2c_link_send_to_lower (tL2C_LCB *p_lcb, BT_HDR *p_buf)
 #endif
     {
         if (p_lcb->link_xmit_quota == 0)
-            l2cb.round_robin_unacked++;
+            if (p_lcb->is_ble_link)
+                l2cb.round_robin_ble_unacked++;
+            else
+                l2cb.round_robin_unacked++;
 
         p_lcb->sent_not_acked++;
         p_buf->layer_specific = 0;
@@ -1339,7 +1480,10 @@ static BOOLEAN l2c_link_send_to_lower (tL2C_LCB *p_lcb, BT_HDR *p_buf)
         l2cb.controller_xmit_window -= num_segs;
 
         if (p_lcb->link_xmit_quota == 0)
-            l2cb.round_robin_unacked += num_segs;
+            if (p_lcb->is_ble_link)
+                l2cb.round_robin_ble_unacked += num_segs;
+            else
+                l2cb.round_robin_unacked += num_segs;
 
         p_lcb->sent_not_acked += num_segs;
 #if BLE_INCLUDED == TRUE
@@ -1358,11 +1502,11 @@ static BOOLEAN l2c_link_send_to_lower (tL2C_LCB *p_lcb, BT_HDR *p_buf)
 #if (BLE_INCLUDED == TRUE)
     if (p_lcb->is_ble_link)
     {
-        L2CAP_TRACE_DEBUG6 ("TotalWin=%d,Hndl=0x%x,Quota=%d,Unack=%d,RRQuota=%d,RRUnack=%d",
+        L2CAP_TRACE_DEBUG6 ("TotalWin=%d,Hndl=0x%x,Quota=%d,Unack=%d,RRBLEQuota=%d,RRBLEUnack=%d",
                 l2cb.controller_le_xmit_window,
                 p_lcb->handle,
                 p_lcb->link_xmit_quota, p_lcb->sent_not_acked,
-                l2cb.round_robin_quota, l2cb.round_robin_unacked);
+                l2cb.round_robin_ble_quota, l2cb.round_robin_ble_unacked);
     }
     else
 #endif
@@ -1429,11 +1573,22 @@ void l2c_link_process_num_completed_pkts (UINT8 *p)
             /* If doing round-robin, adjust communal counts */
             if (p_lcb->link_xmit_quota == 0)
             {
-                /* Don't go negative */
-                if (l2cb.round_robin_unacked > num_sent)
-                    l2cb.round_robin_unacked -= num_sent;
+                if (p_lcb->is_ble_link)
+                {
+                    /* Don't go negative */
+                    if (l2cb.round_robin_ble_unacked > num_sent)
+                        l2cb.round_robin_ble_unacked -= num_sent;
+                    else
+                        l2cb.round_robin_ble_unacked = 0;
+                }
                 else
-                    l2cb.round_robin_unacked = 0;
+                {
+                    /* Don't go negative */
+                    if (l2cb.round_robin_unacked > num_sent)
+                        l2cb.round_robin_unacked -= num_sent;
+                    else
+                        l2cb.round_robin_unacked = 0;
+                }
             }
 
             /* Don't go negative */
@@ -1447,7 +1602,8 @@ void l2c_link_process_num_completed_pkts (UINT8 *p)
             /* If we were doing round-robin for low priority links, check 'em */
             if ( (p_lcb->acl_priority == L2CAP_PRIORITY_HIGH)
               && (l2cb.check_round_robin)
-              && (l2cb.round_robin_unacked < l2cb.round_robin_quota) )
+              && ((l2cb.round_robin_unacked < l2cb.round_robin_quota) ||
+                  (l2cb.round_robin_ble_unacked < l2cb.round_robin_ble_quota)))
             {
               l2c_link_check_send_pkts (NULL, NULL, NULL);
             }
@@ -1459,10 +1615,10 @@ void l2c_link_process_num_completed_pkts (UINT8 *p)
 #if (BLE_INCLUDED == TRUE)
             if (p_lcb->is_ble_link)
             {
-                L2CAP_TRACE_DEBUG5 ("TotalWin=%d,LinkUnack(0x%x)=%d,RRCheck=%d,RRUnack=%d",
+                L2CAP_TRACE_DEBUG5 ("TotalWin=%d,LinkUnack(0x%x)=%d,RRCheck=%d,RRBLEUnack=%d",
                     l2cb.controller_le_xmit_window,
                     p_lcb->handle, p_lcb->sent_not_acked,
-                    l2cb.check_round_robin, l2cb.round_robin_unacked);
+                    l2cb.check_round_robin, l2cb.round_robin_ble_unacked);
             }
             else
 #endif
@@ -1477,11 +1633,11 @@ void l2c_link_process_num_completed_pkts (UINT8 *p)
         else
         {
 #if (BLE_INCLUDED == TRUE)
-            L2CAP_TRACE_DEBUG5 ("TotalWin=%d  LE_Win: %d, Handle=0x%x, RRCheck=%d, RRUnack=%d",
+            L2CAP_TRACE_DEBUG6 ("TotalWin=%d  LE_Win: %d, Handle=0x%x, RRCheck=%d, RRUnack=%d, RRBLEUnack=%d",
                 l2cb.controller_xmit_window,
                 l2cb.controller_le_xmit_window,
                 handle,
-                l2cb.check_round_robin, l2cb.round_robin_unacked);
+                l2cb.check_round_robin, l2cb.round_robin_unacked, l2cb.round_robin_ble_unacked);
 #else
             L2CAP_TRACE_DEBUG4 ("TotalWin=%d  Handle=0x%x  RRCheck=%d  RRUnack=%d",
                 l2cb.controller_xmit_window,

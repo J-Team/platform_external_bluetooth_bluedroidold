@@ -903,6 +903,50 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define RFCOMM_TRACE_DEBUG5(m,p1,p2,p3,p4,p5)      {if (rfc_cb.trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_5(TRACE_LAYER_RFCOMM, TRACE_TYPE_DEBUG, m,p1,p2,p3,p4,p5);}
 #define RFCOMM_TRACE_DEBUG6(m,p1,p2,p3,p4,p5,p6)   {if (rfc_cb.trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_6(TRACE_LAYER_RFCOMM, TRACE_TYPE_DEBUG, m,p1,p2,p3,p4,p5,p6);}
 
+/* define traces for L2c sock */
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+
+#define L2C_SOCK_TRACE_ERROR0(m)                     {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_0(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m);}
+#define L2C_SOCK_TRACE_ERROR1(m,p1)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_1(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1);}
+#define L2C_SOCK_TRACE_ERROR2(m,p1,p2)               {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_2(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1,p2);}
+#define L2C_SOCK_TRACE_ERROR3(m,p1,p2,p3)            {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_3(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1,p2,p3);}
+#define L2C_SOCK_TRACE_ERROR4(m,p1,p2,p3,p4)         {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_4(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1,p2,p3,p4);}
+#define L2C_SOCK_TRACE_ERROR5(m,p1,p2,p3,p4,p5)      {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_5(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1,p2,p3,p4,p5);}
+#define L2C_SOCK_TRACE_ERROR6(m,p1,p2,p3,p4,p5,p6)   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_6(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, m,p1,p2,p3,p4,p5,p6);}
+
+#define L2C_SOCK_TRACE_WARNING0(m)                   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_0(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m);}
+#define L2C_SOCK_TRACE_WARNING1(m,p1)                {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_1(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1);}
+#define L2C_SOCK_TRACE_WARNING2(m,p1,p2)             {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_2(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1,p2);}
+#define L2C_SOCK_TRACE_WARNING3(m,p1,p2,p3)          {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_3(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1,p2,p3);}
+#define L2C_SOCK_TRACE_WARNING4(m,p1,p2,p3,p4)       {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_4(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1,p2,p3,p4);}
+#define L2C_SOCK_TRACE_WARNING5(m,p1,p2,p3,p4,p5)    {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_5(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1,p2,p3,p4,p5);}
+#define L2C_SOCK_TRACE_WARNING6(m,p1,p2,p3,p4,p5,p6) {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE_6(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, m,p1,p2,p3,p4,p5,p6);}
+
+#define L2C_SOCK_TRACE_API0(m)                       {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_0(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m);}
+#define L2C_SOCK_TRACE_API1(m,p1)                    {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_1(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1);}
+#define L2C_SOCK_TRACE_API2(m,p1,p2)                 {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_2(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1,p2);}
+#define L2C_SOCK_TRACE_API3(m,p1,p2,p3)              {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_3(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1,p2,p3);}
+#define L2C_SOCK_TRACE_API4(m,p1,p2,p3,p4)           {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_4(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1,p2,p3,p4);}
+#define L2C_SOCK_TRACE_API5(m,p1,p2,p3,p4,p5)        {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_5(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1,p2,p3,p4,p5);}
+#define L2C_SOCK_TRACE_API6(m,p1,p2,p3,p4,p5,p6)     {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE_6(TRACE_LAYER_L2CAP, TRACE_TYPE_API, m,p1,p2,p3,p4,p5,p6);}
+
+#define L2C_SOCK_TRACE_EVENT0(m)                     {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_0(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m);}
+#define L2C_SOCK_TRACE_EVENT1(m,p1)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_1(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m, p1);}
+#define L2C_SOCK_TRACE_EVENT2(m,p1,p2)               {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_2(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m,p1,p2);}
+#define L2C_SOCK_TRACE_EVENT3(m,p1,p2,p3)            {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_3(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m,p1,p2,p3);}
+#define L2C_SOCK_TRACE_EVENT4(m,p1,p2,p3,p4)         {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_4(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m,p1,p2,p3,p4);}
+#define L2C_SOCK_TRACE_EVENT5(m,p1,p2,p3,p4,p5)      {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_5(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m,p1,p2,p3,p4,p5);}
+#define L2C_SOCK_TRACE_EVENT6(m,p1,p2,p3,p4,p5,p6)   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE_6(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, m,p1,p2,p3,p4,p5,p6);}
+
+#define L2C_SOCK_TRACE_DEBUG0(m)                     {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_0(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m);}
+#define L2C_SOCK_TRACE_DEBUG1(m,p1)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_1(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1);}
+#define L2C_SOCK_TRACE_DEBUG2(m,p1,p2)               {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_2(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1,p2);}
+#define L2C_SOCK_TRACE_DEBUG3(m,p1,p2,p3)            {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_3(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1,p2,p3);}
+#define L2C_SOCK_TRACE_DEBUG4(m,p1,p2,p3,p4)         {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_4(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1,p2,p3,p4);}
+#define L2C_SOCK_TRACE_DEBUG5(m,p1,p2,p3,p4,p5)      {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_5(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1,p2,p3,p4,p5);}
+#define L2C_SOCK_TRACE_DEBUG6(m,p1,p2,p3,p4,p5,p6)   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE_6(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, m,p1,p2,p3,p4,p5,p6);}
+#endif
+
 /* Define tracing for Serial Port Profile
 */
 #define SPP_TRACE_ERROR0(m)                     {if (spp_cb.trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE_0(TRACE_LAYER_SPP, TRACE_TYPE_ERROR, m);}

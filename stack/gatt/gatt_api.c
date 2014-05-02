@@ -129,6 +129,11 @@ BOOLEAN GATTS_RetrieveServiceList(UINT16 **p_l,UINT16* count)
     int xx = 0;
 
     UINT16 *p_srvList = (UINT16*) malloc (sizeof(UINT16) * servCount);
+    if(!p_srvList)
+    {
+       GATT_TRACE_ERROR0("failed to allocate buffer");
+       return FALSE;
+    }
     memset(p_srvList, 0, sizeof(UINT16) * servCount);
 
     GATT_TRACE_API1("NA Service Count ?: %d", servCount);
@@ -1320,7 +1325,7 @@ void GATT_Deregister (tGATT_IF gatt_if)
 
     gatt_deregister_bgdev_list(gatt_if);
     /* update the listen mode */
-    GATT_Listen(gatt_if, FALSE, NULL);
+    /*GATT_Listen(gatt_if, FALSE, NULL);*/
 
     memset (p_reg, 0, sizeof(tGATT_REG));
 }

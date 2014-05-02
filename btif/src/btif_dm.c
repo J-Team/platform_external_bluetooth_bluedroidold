@@ -178,6 +178,8 @@ extern bt_status_t btif_hd_execute_service(BOOLEAN b_enable);
 extern void bta_gatt_convert_uuid16_to_uuid128(UINT8 uuid_128[LEN_UUID_128], UINT16 uuid_16);
 extern BOOLEAN btif_hf_is_connected();
 extern void btif_hf_close_update();
+extern BOOLEAN btif_multihf_is_connected();
+extern void btif_multihf_close_update();
 extern BOOLEAN btif_av_is_connected();
 extern void btif_av_close_update();
 extern void btif_av_move_idle(bt_bdaddr_t bd_addr);
@@ -874,8 +876,13 @@ static void btif_dm_pin_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
             }
         }
     }
+#ifdef QCOM_BLUETOOTH
     HAL_CBACK(bt_hal_cbacks, pin_request_cb,
                      &bd_addr, &bd_name, cod, secure);
+#else
+    HAL_CBACK(bt_hal_cbacks, pin_request_cb,
+                     &bd_addr, &bd_name, cod);
+#endif
 }
 
 /*******************************************************************************
@@ -1721,6 +1728,7 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
 
         case BTA_DM_BLE_ADV_ENABLE_EVT:
             BTIF_TRACE_EVENT3("btif_dm_upstreams_evt:BTA_DM_BLE_ADV_ENABLE_EVT: enable:%d, advType: %d, islimited= %d",p_data->adv_enable.advEnable, p_data->adv_enable.advType, p_data->adv_enable.isLimited);
+        #ifdef QCOM_BLUETOOTH
             if( p_data->adv_enable.advEnable)
             {
                 if(p_data->adv_enable.advType == 0 && p_data->adv_enable.isLimited)//UND, LIMITED
@@ -1740,7 +1748,7 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             {
                 HAL_CBACK(bt_hal_cbacks, le_adv_enable_cb, p_data->adv_enable.advEnable, BLE_ADV_MODE_NONE);
             }
-
+        #endif
         case BTA_DM_BOND_CANCEL_CMPL_EVT:
             if (pairing_cb.state == BT_BOND_STATE_BONDING)
             {
@@ -1821,10 +1829,16 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             /* Flush storage data */
             btif_config_flush();
             //checking hfp is connected
-            if (btif_hf_is_connected())
-            {
-                BTIF_TRACE_DEBUG0("HFP Connection is Active disconnect before kill");
-                btif_hf_close_update();
+            if( btif_is_multi_hf_supported()) {
+                if (btif_multihf_is_connected()) {
+                    BTIF_TRACE_DEBUG0("Multi HFP Connection is Active disconnect before kill");
+                    btif_multihf_close_update();
+                }
+            } else {
+                if (btif_hf_is_connected()) {
+                    BTIF_TRACE_DEBUG0("HFP Connection is Active disconnect before kill");
+                    btif_hf_close_update();
+                }
             }
             //checking weather music is palyed or not
             if (btif_av_is_connected())
@@ -1985,9 +1999,11 @@ static void btif_dm_upstreams_evt(UINT16 event, char* p_param)
             break;
         case BTA_DM_BLE_CONN_PARAMS_EVT:
             bdcpy(bd_addr.address, p_data->ble_conn_params.bd_addr);
+        #ifdef QCOM_BLUETOOTH
             HAL_CBACK(bt_hal_cbacks, ble_conn_params_cb, p_data->ble_conn_params.status,
                     &bd_addr, p_data->ble_conn_params.conn_interval_min, p_data->ble_conn_params.conn_interval_max,
                     p_data->ble_conn_params.latency, p_data->ble_conn_params.supervision_timeout, p_data->ble_conn_params.evt);
+        #endif // QCOM_BLUETOOTH
             break;
 #endif
 
@@ -2455,6 +2471,8 @@ bt_status_t btif_dm_pin_reply( const bt_bdaddr_t *bd_addr, uint8_t accept,
                                uint8_t pin_len, bt_pin_code_t *pin_code)
 {
     BTIF_TRACE_EVENT2("%s: accept=%d", __FUNCTION__, accept);
+    if (pin_code == NULL)
+        return BT_STATUS_FAIL;
 #if (defined(BLE_INCLUDED) && (BLE_INCLUDED == TRUE))
 
     if (pairing_cb.is_le_only)
@@ -3038,8 +3056,13 @@ static void btif_dm_ble_passkey_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
 
     cod = COD_UNCLASSIFIED;
 
+#ifdef QCOM_BLUETOOTH
     HAL_CBACK(bt_hal_cbacks, pin_request_cb,
               &bd_addr, &bd_name, cod, FALSE);
+#else
+    HAL_CBACK(bt_hal_cbacks, pin_request_cb,
+              &bd_addr, &bd_name, cod);
+#endif
 }
 
 

@@ -48,6 +48,7 @@
 #include <hardware/bluetooth.h>
 #include "l2c_api.h"
 #include "sdp_api.h"
+#include "gatt_api.h"
 #include "gap_api.h"
 #include <hardware/hardware.h>
 #include "data_types.h"
@@ -73,6 +74,9 @@ typedef enum {
 typedef enum {
     TEST_APP_L2CAP,
     TEST_APP_SDP,
+    TEST_APP_GATT,
+    TEST_APP_GAP,
+    TEST_APP_SMP,
     TEST_APP_RFCOMM
 } test_app_profile;
 typedef struct {
@@ -128,18 +132,96 @@ typedef struct {
     void      (*Cleanup)(void);
 } btsdp_interface_t;
 
+typedef struct
+{
+    size_t    size;
+    //GATT common APIs (Both client and server)
+    tGATT_IF (*Register) (tBT_UUID *p_app_uuid128, tGATT_CBACK *p_cb_info);
+    void (*Deregister) (tGATT_IF gatt_if);
+    void (*StartIf) (tGATT_IF gatt_if);
+    BOOLEAN (*Connect) (tGATT_IF gatt_if, BD_ADDR bd_addr, BOOLEAN is_direct);
+    tGATT_STATUS (*Disconnect) (UINT16 conn_id);
+    BOOLEAN (*Listen) (tGATT_IF gatt_if, BOOLEAN start, BD_ADDR_PTR bd_addr);
+
+    //GATT Client APIs
+    tGATT_STATUS (*cConfigureMTU) (UINT16 conn_id, UINT16  mtu);
+    tGATT_STATUS (*cDiscover) (UINT16 conn_id, tGATT_DISC_TYPE disc_type, tGATT_DISC_PARAM *p_param );
+    tGATT_STATUS (*cRead) (UINT16 conn_id, tGATT_READ_TYPE type, tGATT_READ_PARAM *p_read);
+    tGATT_STATUS (*cWrite) (UINT16 conn_id, tGATT_WRITE_TYPE type, tGATT_VALUE *p_write);
+    tGATT_STATUS (*cExecuteWrite) (UINT16 conn_id, BOOLEAN is_execute);
+    tGATT_STATUS (*cSendHandleValueConfirm) (UINT16 conn_id, UINT16 handle);
+    void (*cSetIdleTimeout)(BD_ADDR bd_addr, UINT16 idle_tout);
+
+    //GATT Server APIs
+    //TODO - Add api on the need basis
+
+}btgatt_test_interface_t;
+
+typedef struct
+{
+    size_t    size;
+    void (*init)(void);
+    BOOLEAN (*Register) (tSMP_CALLBACK *p_cback);
+    tSMP_STATUS (*Pair) (BD_ADDR bd_addr);
+    BOOLEAN (*PairCancel) (BD_ADDR bd_addr);
+    void (*SecurityGrant)(BD_ADDR bd_addr, UINT8 res);
+    void (*PasskeyReply) (BD_ADDR bd_addr, UINT8 res, UINT32 passkey);
+    BOOLEAN (*Encrypt) (UINT8 *key, UINT8 key_len, UINT8 *plain_text, UINT8 pt_len, tSMP_ENC *p_out);
+}btsmp_interface_t;
+typedef struct
+{
+    size_t    size;
+    void (*Gap_AttrInit)();
+    void (*Gap_BleAttrDBUpdate)(BD_ADDR bd_addr, UINT16 int_min, UINT16 int_max, UINT16 latency, UINT16 sp_tout);
+    void (*Gap_SetDiscoverableMode)(UINT16 mode, UINT16 duration, UINT16 interval);
+    void (*Gap_SetConnectableMode) (UINT16 mode, UINT16 duration, UINT16 interval);
+}btgap_interface_t;
+/*
 typedef struct {
     size_t   size;
     void     (*Gap_AttrInit)();
 }btgap_interface_t;
+*/
+
+/** Bluetooth RFC tool commands */
+typedef enum {
+    RFC_TEST_CLIENT =1,
+    RFC_TEST_FRAME_ERROR,
+    RFC_TEST_ROLE_SWITCH,
+    RFC_TEST_SERVER,
+    RFC_TEST_DISCON,
+    RFC_TEST_WRITE_DATA
+}rfc_test_cmd_t;
+
 
 typedef struct {
-    size_t      size;
-    bt_status_t (*Init)(tL2CAP_APPL_INFO* callbacks);
-    bt_status_t (*RegisterPsm)(UINT16 psm);
-    bt_status_t (*Deregister)(UINT16 psm);
-    bt_status_t (*Connect)(bt_bdaddr_t *bd_addr);
-    void  (*Cleanup)(void);
+    bt_bdaddr_t bdadd;
+    uint8_t     scn; //Server Channel Number
+}bt_rfc_conn_t;
+
+typedef struct {
+    bt_bdaddr_t bdadd;
+    uint8_t     role; //0x01 for master
+}bt_role_sw;
+
+typedef union {
+    bt_rfc_conn_t  conn;
+    uint8_t        server;
+    bt_role_sw     role_switch;
+}tRfcomm_test;
+
+typedef struct {
+    rfc_test_cmd_t param;
+    tRfcomm_test   data;
+}tRFC;
+
+typedef struct {
+    size_t          size;
+    bt_status_t (*init)( tL2CAP_APPL_INFO* callbacks );
+    void  (*rdut_rfcomm)( BOOLEAN server );
+    void  (*rdut_rfcomm_test_interface)( tRFC *input);
+    bt_status_t (*connect)( bt_bdaddr_t *bd_addr );
+    void  (*cleanup)( void );
 } btrfcomm_interface_t;
 
 #endif

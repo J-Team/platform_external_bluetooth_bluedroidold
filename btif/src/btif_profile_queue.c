@@ -98,7 +98,7 @@ static bt_status_t queue_int_connect_next()
         return BT_STATUS_SUCCESS;
 
     p_head->busy = TRUE;
-    return (*(btif_connect_cb_t*)p_head->p_cb)(&p_head->bda);
+    return (*(btif_connect_cb_t*)p_head->p_cb)(&p_head->bda, p_head->uuid);
 }
 
 static void queue_check_connect(connect_node_t *p_param)

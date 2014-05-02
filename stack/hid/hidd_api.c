@@ -316,6 +316,13 @@ tHID_STATUS HID_DevAddRecord(UINT32 handle, char *p_name, char *p_description, c
 
             p_buf = (UINT8 *) GKI_getbuf(2048);
 
+            if (p_buf == NULL)
+            {
+                HIDD_TRACE_ERROR1("%s: Buffer allocation failure for size = 2048 ",
+                    __FUNCTION__);
+                return HID_ERR_NOT_REGISTERED;
+            }
+
             p = p_buf;
 
             UINT8_TO_BE_STREAM(p, (DATA_ELE_SEQ_DESC_TYPE << 3) | SIZE_IN_NEXT_BYTE);

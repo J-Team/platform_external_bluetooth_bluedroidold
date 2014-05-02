@@ -2089,7 +2089,8 @@ BTA_API extern void BTA_DmBleObserve_With_Filter(BOOLEAN start, UINT8 duration, 
         p_msg->duration = duration;
         p_msg->scan_policy = scan_policy;
         p_msg->filtercnt = entries;
-        memcpy(p_msg->filters, filters, entries * sizeof(tBTA_DM_BLE_SCAN_FILTER));
+        if(filters != NULL)
+            memcpy(p_msg->filters, filters, entries * sizeof(tBTA_DM_BLE_SCAN_FILTER));
         p_msg->p_cback = p_results_cb;
         bta_sys_sendmsg(p_msg);
     }

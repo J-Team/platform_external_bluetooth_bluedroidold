@@ -87,7 +87,14 @@ typedef enum
     LST_DISCONNECTING
 } tL2C_LINK_STATE;
 
-
+/* Define the L2CAP link type
+*/
+typedef enum
+{
+    LT_BR_EDR,
+    LT_BLE,
+    LT_UNKNOWN,
+} tL2C_LINK_TYPE;
 
 /* Define input events to the L2CAP link and channel state machines. The names
 ** of the events may seem a bit strange, but they are taken from
@@ -468,6 +475,8 @@ typedef struct
 
     UINT16          round_robin_quota;              /* Round-robin link quota           */
     UINT16          round_robin_unacked;            /* Round-robin unacked              */
+    UINT16          round_robin_ble_quota;              /* Round-robin link quota           */
+    UINT16          round_robin_ble_unacked;            /* Round-robin unacked              */
     BOOLEAN         check_round_robin;              /* Do a round robin check           */
 
     BOOLEAN         is_cong_cback_context;
@@ -580,7 +589,7 @@ extern void     l2c_process_held_packets (BOOLEAN timed_out);
 /* Functions provided by l2c_utils.c
 ************************************
 */
-extern tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding);
+extern tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tL2C_LINK_TYPE link_type);
 extern BOOLEAN  l2cu_start_post_bond_timer (UINT16 handle);
 extern void     l2cu_release_lcb (tL2C_LCB *p_lcb);
 extern tL2C_LCB *l2cu_find_lcb_by_bd_addr (BD_ADDR p_bd_addr);
@@ -696,6 +705,7 @@ extern void     l2c_link_timeout (tL2C_LCB *p_lcb);
 extern void     l2c_info_timeout (tL2C_LCB *p_lcb);
 extern void     l2c_link_check_send_pkts (tL2C_LCB *p_lcb, tL2C_CCB *p_ccb, BT_HDR *p_buf);
 extern void     l2c_link_adjust_allocation (void);
+extern void     l2c_ble_link_adjust_allocation (void);
 extern void     l2c_link_process_num_completed_pkts (UINT8 *p);
 extern void     l2c_link_process_num_completed_blocks (UINT8 controller_id, UINT8 *p, UINT16 evt_len);
 extern void     l2c_link_processs_num_bufs (UINT16 num_lm_acl_bufs);

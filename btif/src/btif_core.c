@@ -856,8 +856,10 @@ static void btif_hci_event_cback ( tBTM_RAW_CMPL *p )
     BTIF_TRACE_DEBUG1("%s", __FUNCTION__);
     if(p != NULL)
     {
+    #ifdef QCOM_BLUETOOTH
         HAL_CBACK(bt_hal_cbacks, hci_event_recv_cb, p->event_code, p->p_param_buf,
                                                                 p->param_len);
+   #endif
     }
 }
 
@@ -1240,11 +1242,13 @@ static void system_power_manager_wake(UINT16 event, char *p_param)
     {
         case BTIF_DM_SYSTEM_WAKE:
         {
+#ifdef QCOM_BLUETOOTH
              if(*(UINT32 *)p_param) {
                  HAL_CBACK(bt_hal_cbacks, wake_state_changed_cb, BT_STATE_ON);
              } else {
                  HAL_CBACK(bt_hal_cbacks, wake_state_changed_cb, BT_STATE_OFF);
              }
+#endif
         } break;
 
         default:
@@ -1407,18 +1411,37 @@ bt_status_t btif_set_adapter_property(const bt_property_t *property)
                         conn_mode = BTA_DM_BLE_CONNECTABLE;
                         adv_directed = FALSE;
                         break;
-
+#ifdef QCOM_BLUETOOTH
+                    case BLE_ADV_IND_GENERAL_NON_CONNECTABLE:
+                        disc_mode = BTA_DM_BLE_GENERAL_DISCOVERABLE;
+                        conn_mode = BTA_DM_BLE_NON_CONNECTABLE;
+                        adv_directed = FALSE;
+                        break;
+#endif
                     case BLE_ADV_IND_LIMITED_CONNECTABLE:
                         disc_mode = BTA_DM_BLE_LIMITED_DISCOVERABLE;
                         conn_mode = BTA_DM_BLE_CONNECTABLE;
                         adv_directed = FALSE;
                         break;
-
+#ifdef QCOM_BLUETOOTH
+                    case BLE_ADV_IND_LIMITED_NON_CONNECTABLE:
+                        disc_mode = BTA_DM_BLE_LIMITED_DISCOVERABLE;
+                        conn_mode = BTA_DM_BLE_NON_CONNECTABLE;
+                        adv_directed = FALSE;
+                        break;
+#endif
                     case BLE_ADV_DIR_CONNECTABLE:
                         disc_mode = BTA_DM_BLE_GENERAL_DISCOVERABLE;
                         conn_mode = BTA_DM_BLE_CONNECTABLE;
                         adv_directed = TRUE;
                         break;
+#ifdef QCOM_BLUETOOTH
+                    case BLE_ADV_IND_NON_DISC_CONNECTABLE:
+                        disc_mode = BTA_DM_BLE_NON_DISCOVERABLE;
+                        conn_mode = BTA_DM_BLE_CONNECTABLE;
+                        adv_directed = FALSE;
+                        break;
+#endif
                     default:
                         BTIF_TRACE_ERROR1("invalid scan mode (0x%x)", mode);
                         return BT_STATUS_PARM_INVALID;

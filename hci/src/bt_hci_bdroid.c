@@ -375,8 +375,8 @@ static int logging(bt_hc_logging_state_t state, char *p_path)
 
     if (state == BT_HC_LOGGING_ON)
     {
-        if (p_path != NULL)
-            btsnoop_open(p_path);
+        /* NULL path is used to dump to local socket */
+        btsnoop_open(p_path);
     }
     else
     {

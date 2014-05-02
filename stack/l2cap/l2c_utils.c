@@ -46,7 +46,7 @@
 ** Returns          LCB address or NULL if none found
 **
 *******************************************************************************/
-tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding)
+tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tL2C_LINK_TYPE link_type)
 {
     int         xx;
     tL2C_LCB    *p_lcb = &l2cb.lcb_pool[0];
@@ -70,8 +70,39 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding)
             p_lcb->is_bonding      = is_bonding;
 
             l2cb.num_links_active++;
+            if (link_type == LT_BLE)
+            {
+                p_lcb->is_ble_link     = TRUE;
+                l2c_ble_link_adjust_allocation();
+            }
+            else if (link_type == LT_BR_EDR)
+            {
+                p_lcb->is_ble_link     = FALSE;
+                l2c_link_adjust_allocation();
+            }
+            else if (link_type == LT_UNKNOWN)
+            {
+#if (defined BLE_INCLUDED && BLE_INCLUDED == TRUE)
+               tBT_DEVICE_TYPE     dev_type;
+               tBLE_ADDR_TYPE      addr_type;
 
-            l2c_link_adjust_allocation();
+               BTM_ReadDevInfo(p_bd_addr, &dev_type, &addr_type);
+               if (dev_type == BT_DEVICE_TYPE_BLE)
+               {
+                   p_lcb->is_ble_link     = TRUE;
+                   l2c_ble_link_adjust_allocation();
+               }
+               else
+               {
+                   p_lcb->is_ble_link     = FALSE;
+                   l2c_link_adjust_allocation();
+               }
+#else
+                   p_lcb->is_ble_link     = FALSE;
+                   l2c_link_adjust_allocation();
+#endif
+
+            }
             return (p_lcb);
         }
     }
@@ -116,6 +147,12 @@ void l2cu_update_lcb_4_bonding (BD_ADDR p_bd_addr, BOOLEAN is_bonding)
 void l2cu_release_lcb (tL2C_LCB *p_lcb)
 {
     tL2C_CCB    *p_ccb;
+    BOOLEAN     is_ble = FALSE;
+
+    if (p_lcb->is_ble_link)
+        is_ble = TRUE;
+    else
+        is_ble = FALSE;
 
     p_lcb->in_use     = FALSE;
     p_lcb->is_bonding = FALSE;
@@ -205,7 +242,10 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
     if (l2cb.num_links_active >= 1)
         l2cb.num_links_active--;
 
-    l2c_link_adjust_allocation();
+    if (is_ble)
+        l2c_ble_link_adjust_allocation();
+    else
+        l2c_link_adjust_allocation();
 
     /* Check for ping outstanding */
     if (p_lcb->p_echo_rsp_cb)
@@ -2124,6 +2164,7 @@ BOOLEAN l2cu_create_conn (tL2C_LCB *p_lcb)
 
         p_lcb->ble_addr_type = addr_type;
         p_lcb->is_ble_link   = TRUE;
+        l2c_ble_link_adjust_allocation();
 
         return (l2cble_create_conn(p_lcb));
     }
@@ -2556,9 +2597,10 @@ void l2cu_adjust_out_mps (tL2C_CCB *p_ccb)
         For EDR 2.0 packet size is 1027.  So we better send RFCOMM packet as 1 3DH5 packet
         1 * 1027 = 1027.  Minus 4 bytes L2CAP header 1023.  */
         if (p_ccb->peer_cfg.fcr.mps >= packet_size)
-            p_ccb->tx_mps = p_ccb->peer_cfg.fcr.mps / packet_size * packet_size;
+            p_ccb->tx_mps = packet_size;
         else
             p_ccb->tx_mps = p_ccb->peer_cfg.fcr.mps;
+
 
         L2CAP_TRACE_DEBUG3 ("l2cu_adjust_out_mps use %d   Based on peer_cfg.fcr.mps: %u  packet_size: %u",
                             p_ccb->tx_mps, p_ccb->peer_cfg.fcr.mps, packet_size);

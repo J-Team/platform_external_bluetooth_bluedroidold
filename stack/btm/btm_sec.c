@@ -2816,7 +2816,7 @@ static tBTM_STATUS btm_sec_dd_create_conn (tBTM_SEC_DEV_REC *p_dev_rec)
     tL2C_LCB         *p_lcb;
 
     /* Make sure an L2cap link control block is available */
-    if ((p_lcb = l2cu_allocate_lcb (p_dev_rec->bd_addr, TRUE)) == NULL)
+    if ((p_lcb = l2cu_allocate_lcb (p_dev_rec->bd_addr, TRUE, LT_UNKNOWN)) == NULL)
     {
         BTM_TRACE_WARNING6 ("Security Manager: failed allocate LCB [%02x%02x%02x%02x%02x%02x]",
                             p_dev_rec->bd_addr[0], p_dev_rec->bd_addr[1], p_dev_rec->bd_addr[2],
@@ -2992,7 +2992,8 @@ void btm_sec_rmt_name_request_complete (UINT8 *p_bd_addr, UINT8 *p_bd_name, UINT
                 return;
             }
 
-            if (status != HCI_SUCCESS)
+            /* Ignore the Page timeout error for RNR */
+            if ((status != HCI_SUCCESS) && (status != HCI_ERR_PAGE_TIMEOUT))
             {
                 btm_sec_change_pairing_state (BTM_PAIR_STATE_IDLE);
 
@@ -3594,7 +3595,7 @@ void btm_simple_pair_complete (UINT8 *p)
     {
         /* simple pairing failed */
         /* Avoid sending disconnect on HCI_ERR_PEER_USER */
-        if (status != HCI_ERR_PEER_USER)
+        if ((status != HCI_ERR_PEER_USER) && (status != HCI_ERR_CONN_CAUSE_LOCAL_HOST))
         {
             btm_sec_send_hci_disconnect (p_dev_rec, HCI_ERR_AUTH_FAILURE);
         }
@@ -3852,7 +3853,10 @@ void btm_sec_auth_complete (UINT16 handle, UINT8 status)
         p_dev_rec->security_required &= ~BTM_SEC_OUT_AUTHENTICATE;
 
         if (status != HCI_SUCCESS)
-            btm_sec_send_hci_disconnect (p_dev_rec, HCI_ERR_PEER_USER);
+        {
+            if(((status != HCI_ERR_PEER_USER) && (status != HCI_ERR_CONN_CAUSE_LOCAL_HOST)))
+                btm_sec_send_hci_disconnect (p_dev_rec, HCI_ERR_PEER_USER);
+        }
         else
             l2cu_start_post_bond_timer (p_dev_rec->hci_handle);
 

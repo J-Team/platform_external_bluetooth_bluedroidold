@@ -50,9 +50,13 @@ LOCAL_SRC_FILES += \
     ../btif/src/btif_config_util.cpp \
     ../btif/src/btif_profile_queue.c \
     ../btif/src/bluetoothTrack.cpp \
+    ../btif/src/btif_gatt_qual.c \
+    ../btif/src/btif_gap.c \
     ../btif/src/btif_l2cap.c \
-    ../btif/src/btif_sdp.c \
+    ../btif/src/btif_sock_l2cap.c \
+    ../btif/src/btif_sdp.c  \
     ../wipowerif/src/wipower.c \
+    ../btif/src/btif_rfcomm.c \
 
 # callouts
 LOCAL_SRC_FILES+= \
@@ -123,6 +127,9 @@ ifeq ($(TARGET_PRODUCT), full_maguro)
      LOCAL_CFLAGS += -DTARGET_MAGURO
 endif
 
+ifeq ($(BOARD_HAVE_BLUETOOTH_QCOM),true)
+LOCAL_CFLAGS += -DQCOM_BLUETOOTH
+endif
 # Fix this
 #ifeq ($(TARGET_VARIANT), eng)
 #     LOCAL_CFLAGS += -O2 # and other production release flags

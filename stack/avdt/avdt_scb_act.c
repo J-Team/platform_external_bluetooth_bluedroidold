@@ -2018,7 +2018,14 @@ void avdt_scb_tc_timer(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 *******************************************************************************/
 void avdt_scb_clr_vars(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 {
-    p_scb->in_use = FALSE;
+    if ((p_scb->cs.tsep == AVDT_TSEP_SNK) && (!p_scb->sink_activated))
+    {
+        p_scb->in_use = TRUE;
+    }
+    else
+    {
+        p_scb->in_use = FALSE;
+    }
     p_scb->p_ccb = NULL;
     p_scb->peer_seid = 0;
 }

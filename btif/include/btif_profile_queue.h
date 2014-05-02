@@ -27,7 +27,7 @@
 #ifndef BTIF_PROFILE_QUEUE_H
 #define BTIF_PROFILE_QUEUE_H
 
-typedef bt_status_t (btif_connect_cb_t) (bt_bdaddr_t *bda);
+typedef bt_status_t (btif_connect_cb_t) (bt_bdaddr_t *bda, uint16_t uuid);
 
 typedef enum {
   BTIF_QUEUE_CONNECT_EVT,

@@ -154,6 +154,8 @@ extern wipower_interface_t *get_wipower_interface();
 extern const btl2cap_interface_t *btif_l2cap_get_interface(void);
 extern const btsdp_interface_t *btif_sdp_get_interface(void);
 extern const btrfcomm_interface_t *btif_rfcomm_get_interface(void);
+extern const btgatt_test_interface_t *btif_gatt_test_get_interface(void);
+extern const btgap_interface_t *btif_gap_get_interface(void);
 #endif
 
 /************************************************************************************
@@ -202,12 +204,14 @@ static int initq(bt_callbacks_t* callbacks)
     ALOGI("initq");
     if(interface_ready()==FALSE)
         return BT_STATUS_NOT_READY; //halbacks have not been initialized for the interface yet, by the adapterservice
+#ifdef QCOM_BLUETOOTH
     bt_hal_cbacks->le_adv_enable_cb              = callbacks->le_adv_enable_cb;
     bt_hal_cbacks->le_extended_scan_result_cb    = callbacks->le_extended_scan_result_cb;
     bt_hal_cbacks->le_lpp_write_rssi_thresh_cb   = callbacks->le_lpp_write_rssi_thresh_cb;
     bt_hal_cbacks->le_lpp_read_rssi_thresh_cb    = callbacks->le_lpp_read_rssi_thresh_cb;
     bt_hal_cbacks->le_lpp_enable_rssi_monitor_cb = callbacks->le_lpp_enable_rssi_monitor_cb;
     bt_hal_cbacks->le_lpp_rssi_threshold_evt_cb  = callbacks->le_lpp_rssi_threshold_evt_cb;
+#endif
     return BT_STATUS_SUCCESS;
 }
 
@@ -464,9 +468,13 @@ static const void* get_testapp_interface(int test_app_profile)
         case TEST_APP_L2CAP:
             return btif_l2cap_get_interface();
         case TEST_APP_SDP:
-           return btif_sdp_get_interface();
+            return btif_sdp_get_interface();
         case TEST_APP_RFCOMM:
-           //return btif_rfcomm_get_interface();
+            return btif_rfcomm_get_interface();
+        case TEST_APP_GATT:
+           return btif_gatt_test_get_interface();
+        case TEST_APP_GAP:
+           return btif_gap_get_interface();
         default:
             return NULL;
     }
@@ -625,7 +633,7 @@ static void bt_handle_le_extended_scan(uint16_t event, char *p_param)
             break;
         case BT_LE_EXTENDED_SCAN_STOP:
             ALOGD("%s: Stop LE extended scan", __FUNCTION__);
-            BTA_DmBleObserve_With_Filter(FALSE, 0, 0, 0, 0, 0);
+            BTA_DmBleObserve_With_Filter(FALSE, 0, NULL, 0, 0, NULL);
             break;
         default:
             ALOGE("%s: Event %d unexpected!!!", __FUNCTION__, event);
@@ -672,21 +680,27 @@ static void bt_le_lpp_rssi_monitor_upstream_evt(uint16_t event, char* p_param)
         switch(p_cb->content.cmd_cpl_evt.subcmd)
         {
         case WRITE_RSSI_MONITOR_THRESHOLD:
+#ifdef QCOM_BLUETOOTH
             HAL_CBACK(bt_hal_cbacks, le_lpp_write_rssi_thresh_cb,
                       &p_cb->remote_bda, p_cb->content.cmd_cpl_evt.status);
+#endif
             break;
         case READ_RSSI_MONITOR_THRESHOLD:
+#ifdef QCOM_BLUETOOTH
             HAL_CBACK(bt_hal_cbacks, le_lpp_read_rssi_thresh_cb,
                       &p_cb->remote_bda, p_cb->content.cmd_cpl_evt.detail.read_result.low,
                       p_cb->content.cmd_cpl_evt.detail.read_result.upper,
                       p_cb->content.cmd_cpl_evt.detail.read_result.alert,
                       p_cb->content.cmd_cpl_evt.status);
 
+#endif
             break;
         case ENABLE_RSSI_MONITOR:
+#ifdef QCOM_BLUETOOTH
             HAL_CBACK(bt_hal_cbacks, le_lpp_enable_rssi_monitor_cb,
                       &p_cb->remote_bda, p_cb->content.cmd_cpl_evt.detail.enable,
                       p_cb->content.cmd_cpl_evt.status);
+#endif
             break;
         default:
             break;
@@ -694,9 +708,11 @@ static void bt_le_lpp_rssi_monitor_upstream_evt(uint16_t event, char* p_param)
         break;
     case BT_LE_LPP_RSSI_MONITOR_THRESH_EVT:
          ALOGD("%s rssi value = %d", __FUNCTION__, (int)(p_cb->content.rssi_thresh_evt.rssi_value));
+#ifdef QCOM_BLUETOOTH
          HAL_CBACK(bt_hal_cbacks, le_lpp_rssi_threshold_evt_cb,
                   &p_cb->remote_bda, p_cb->content.rssi_thresh_evt.rssi_event_type,
                   p_cb->content.rssi_thresh_evt.rssi_value);
+#endif
         break;
     default:
         ALOGE("%s invalid event", __FUNCTION__);

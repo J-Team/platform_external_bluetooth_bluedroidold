@@ -1325,7 +1325,7 @@ tBTM_STATUS btm_ble_set_discoverability(UINT16 combined_mode)
     if (mode > BTM_BLE_MAX_DISCOVERABLE)
         return(BTM_ILLEGAL_VALUE);
 
-    p_cb->br_edr_supported_flag =0;//|= (combined_mode & BTM_DISCOVERABLE_MASK);
+    p_cb->br_edr_supported_flag |= (combined_mode & BTM_DISCOVERABLE_MASK);
     p_cb->discoverable_mode = mode;
 
     if (!p_cb->br_edr_supported_flag)
@@ -1450,7 +1450,7 @@ tBTM_STATUS btm_ble_set_connectability(UINT16 combined_mode)
     BTM_TRACE_EVENT1("btm_ble_set_connectability current flag: %d", cur_flag);
     cur_br_edr_not_sup_flag = (cur_flag & ((UINT8) BTM_BLE_BREDR_NOT_SPT));
 
-    p_cb->br_edr_supported_flag=0;// |= ((combined_mode & BTM_CONNECTABLE_MASK) << 4);
+    p_cb->br_edr_supported_flag |= ((combined_mode & BTM_CONNECTABLE_MASK) << 4);
     if (p_cb->br_edr_supported_flag && cur_br_edr_not_sup_flag)
     {
         new_flag = cur_flag & ((UINT8) (~BTM_BLE_BREDR_NOT_SPT));
@@ -2456,9 +2456,9 @@ void btm_ble_set_visibility(UINT16 conn_mode, UINT16 disc_mode, tBTM_BLE_ADV_ENA
     //BTM_ReadAdvTxPower();//for adv data Tx power param
     BTM_SetAdvData(BTM_BLE_SCAN_RESP_MASK);
     if(conn_mode!=BTM_BLE_IGNORE)
-        btm_ble_set_connectability(conn_mode);
+        btm_ble_set_connectability(conn_mode|BTM_CONNECTABLE_MASK);
     if(disc_mode!=BTM_BLE_IGNORE)
-        btm_ble_set_discoverability(disc_mode);
+        btm_ble_set_discoverability(disc_mode|BTM_DISCOVERABLE_MASK);
 }
 /*******************************************************************************
 **
@@ -2519,7 +2519,7 @@ void btm_ble_update_mode_operation(UINT8 link_role, BD_ADDR bd_addr, BOOLEAN con
         btm_ble_set_connectability ( btm_cb.ble_ctr_cb.inq_var.connectable_mode );
     }
 
-    if (btm_ble_get_conn_st() == BLE_CONN_IDLE)
+    if ((btm_ble_get_conn_st() == BLE_CONN_IDLE) && (dev_role != HCI_ROLE_SLAVE))
     {
         if (!btm_send_pending_direct_conn())
         {

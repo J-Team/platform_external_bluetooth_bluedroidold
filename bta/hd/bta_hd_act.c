@@ -86,11 +86,11 @@ void bta_hd_api_enable(tBTA_HD_DATA *p_data)
 
     HID_DevSetSecurityLevel(BTA_SEC_AUTHENTICATE | BTA_SEC_ENCRYPT);
 
+    /* store parameters */
+    bta_hd_cb.p_cback = p_data->api_enable.p_cback;
+
     if ((ret = HID_DevRegister(bta_hd_cback)) == HID_SUCCESS)
     {
-        /* store parameters */
-        bta_hd_cb.p_cback = p_data->api_enable.p_cback;
-
         status = BTA_HD_OK;
     }
     else
@@ -161,6 +161,15 @@ void bta_hd_register_act(tBTA_HD_DATA *p_data)
     APPL_TRACE_API1("%s", __FUNCTION__);
 
     ret.reg_status.in_use = FALSE;
+
+    /* Check if len doesn't exceed BTA_HD_APP_DESCRIPTOR_LEN */
+    if (p_app_data->d_len > BTA_HD_APP_DESCRIPTOR_LEN)
+    {
+        ret.reg_status.status = BTA_HD_ERROR;
+        (* bta_hd_cb.p_cback)(BTA_HD_REGISTER_APP_EVT, &ret);
+        return;
+    }
+
     ret.reg_status.status = BTA_HD_OK;
 
     /* Remove old record if for some reason it's already registered */

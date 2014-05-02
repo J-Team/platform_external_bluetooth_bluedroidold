@@ -41,6 +41,8 @@
 *****************************************************************************/
 
 /* AVDTP protocol timeout values */
+#define BTIF_AVK_SERVICE_NAME "Advanced Audio Sink"
+
 #ifndef BTA_AV_RET_TOUT
 #define BTA_AV_RET_TOUT     4
 #endif
@@ -150,6 +152,9 @@ static const tBTA_AV_ST_TBL bta_av_st_tbl[] =
 typedef void (*tBTA_AV_NSM_ACT)(tBTA_AV_DATA *p_data);
 static void bta_av_api_enable(tBTA_AV_DATA *p_data);
 static void bta_av_api_register(tBTA_AV_DATA *p_data);
+#ifdef BTA_AVK_INCLUDED
+static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data);
+#endif
 static void bta_av_ci_data(tBTA_AV_DATA *p_data);
 #if (AVDT_REPORTING == TRUE)
 static void bta_av_rpc_conn(tBTA_AV_DATA *p_data);
@@ -175,6 +180,9 @@ const tBTA_AV_NSM_ACT bta_av_nsm_act[] =
     bta_av_rc_closed,       /* BTA_AV_AVRC_CLOSE_EVT */
     bta_av_conn_chg,        /* BTA_AV_CONN_CHG_EVT */
     bta_av_dereg_comp,      /* BTA_AV_DEREG_COMP_EVT */
+#ifdef BTA_AVK_INCLUDED
+    bta_av_api_sink_enable, /* BTA_AV_API_SINK_ENABLE_EVT */
+#endif
 #if (AVDT_REPORTING == TRUE)
     bta_av_rpc_conn,        /* BTA_AV_AVDT_RPT_CONN_EVT */
 #endif
@@ -455,6 +463,49 @@ static void bta_av_a2dp_report_cback(UINT8 handle, AVDT_REPORT_TYPE type,
 }
 #endif
 
+#ifdef BTA_AVK_INCLUDED
+/*******************************************************************************
+**
+** Function         bta_av_api_sink_enable
+**
+** Description      activate, deactive A2DP Sink,
+**
+** Returns          void
+**
+*******************************************************************************/
+
+static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data)
+{
+    UINT16 activate_sink = 0;
+    activate_sink = p_data->hdr.layer_specific;
+    APPL_TRACE_DEBUG1("bta_av_api_sink_enable %d ", activate_sink)
+    char p_service_name[BTA_SERVICE_NAME_LEN+1];
+    BCM_STRNCPY_S(p_service_name, sizeof(p_service_name),
+            BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN);
+
+    if(activate_sink)
+    {
+        AVDT_SINK_Activate();
+        if (bta_av_cb.sdp_a2d_snk_handle == 0)
+        {
+            bta_av_cb.sdp_a2d_snk_handle = SDP_CreateRecord();
+            A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
+                          A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_snk_handle);
+            bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
+        }
+    }
+    else
+    {
+        AVDT_SINK_Deactivate();
+        if (bta_av_cb.sdp_a2d_snk_handle != 0)
+        {
+            SDP_DeleteRecord(bta_av_cb.sdp_a2d_snk_handle);
+            bta_av_cb.sdp_a2d_snk_handle = 0;
+            bta_sys_remove_uuid(UUID_SERVCLASS_AUDIO_SINK);
+        }
+    }
+}
+#endif
 /*******************************************************************************
 **
 ** Function         bta_av_api_register
@@ -476,6 +527,8 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
     tBTA_AV_CODEC   codec_type;
     tBTA_UTL_COD    cod;
     UINT8           index = 0;
+    char p_avk_service_name[BTA_SERVICE_NAME_LEN+1];
+    BCM_STRNCPY_S(p_avk_service_name, sizeof(p_avk_service_name), BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN);
 
     memset(&cs,0,sizeof(tAVDT_CS));
 
@@ -633,7 +686,7 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
 
 #ifdef BTA_AVK_INCLUDED
                 bta_av_cb.sdp_a2d_snk_handle = SDP_CreateRecord();
-                A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
+                A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_avk_service_name, NULL,
                                   A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_snk_handle);
                 bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
 #endif
@@ -1338,6 +1391,9 @@ char *bta_av_evt_code(UINT16 evt_code)
     case BTA_AV_AVRC_CLOSE_EVT: return "AVRC_CLOSE";
     case BTA_AV_CONN_CHG_EVT: return "CONN_CHG";
     case BTA_AV_DEREG_COMP_EVT: return "DEREG_COMP";
+#ifdef BTA_AVK_INCLUDED
+    case BTA_AV_API_SINK_ENABLE_EVT: return "SINK_ENABLE";
+#endif
 #if (AVDT_REPORTING == TRUE)
     case BTA_AV_AVDT_RPT_CONN_EVT: return "RPT_CONN";
 #endif

@@ -30,7 +30,6 @@
 #define BT_CLEAN_TURN_ON_DISABLED 1
 #endif
 
-
 #ifndef BTIF_HSAG_SERVICE_NAME
 #define BTIF_HSAG_SERVICE_NAME  ("Headset Gateway")
 #endif
@@ -361,6 +360,10 @@
 
 #ifndef BTA_AV_CO_CP_SCMS_T
 #define BTA_AV_CO_CP_SCMS_T  FALSE
+#endif
+
+#ifndef BTA_AV_DISCONNECT_IF_NO_SCMS_T
+#define BTA_AV_DISCONNECT_IF_NO_SCMS_T  FALSE
 #endif
 
 #ifndef AVDT_CONNECT_CP_ONLY
@@ -1216,6 +1219,16 @@ and USER_HW_DISABLE_API macros */
 #define BTM_OOB_INCLUDED                TRUE
 #endif
 
+/* Include No MITM/No Bonding/No Keys implementation for Simple Pairing */
+#ifndef BTM_NO_MITM_NO_BONDING_INCLUDED
+#define BTM_NO_MITM_NO_BONDING_INCLUDED  FALSE
+#endif
+
+/* Include No MITM implementation for Simple Pairing */
+#ifndef BTM_NO_MITM_INCLUDED
+#define BTM_NO_MITM_INCLUDED  FALSE
+#endif
+
 /* TRUE to include Sniff Subrating */
 #ifndef BTM_SSR_INCLUDED
 #define BTM_SSR_INCLUDED                TRUE
@@ -1818,6 +1831,22 @@ and USER_HW_DISABLE_API macros */
 #ifndef OBX_MD5_TEST_INCLUDED
 #define OBX_MD5_TEST_INCLUDED       FALSE
 #endif
+
+/* TRUE to include Obex Over L2CAP */
+#ifndef OBX_OVER_L2CAP_INCLUDED
+#define OBX_OVER_L2CAP_INCLUDED               TRUE
+#endif
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#define MAX_L2C_SOCK_CONNECTIONS              (8)
+#define OBX_OVER_L2C_MAX_MTU                  (65000)
+#define OBX_OVER_L2C_TX_WINDOW_SIZE           (63)
+#define OBX_OVER_L2C_MAX_TX_B4_DISCNT         (20)
+#define OBX_OVER_L2C_RETX_TOUT                (2000)
+#define OBX_OVER_L2C_MONITOR_TOUT             (12000)
+#define OBX_OVER_L2C_MPS_SIZE                 (1008)
+#endif
+
 
 /* TRUE to include OBEX 1.4 enhancement (including Obex Over L2CAP) */
 #ifndef OBX_14_INCLUDED
@@ -3797,7 +3826,7 @@ The maximum number of payload octets that the local device can receive in a sing
 
 /* TEST_APP_INTERFACE */
 #ifndef TEST_APP_INTERFACE
-#define TEST_APP_INTERFACE          TRUE
+#define TEST_APP_INTERFACE           FALSE
 #endif
 
 /* When TRUE remote terminal code included (RPC MUST be included) */

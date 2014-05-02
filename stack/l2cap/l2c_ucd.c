@@ -572,7 +572,7 @@ static BOOLEAN l2c_ucd_connect ( BD_ADDR rem_bda )
     if ((p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda)) == NULL)
     {
         /* No link. Get an LCB and start link establishment */
-        if ( ((p_lcb = l2cu_allocate_lcb (rem_bda, FALSE)) == NULL)
+        if ( ((p_lcb = l2cu_allocate_lcb (rem_bda, FALSE, LT_UNKNOWN)) == NULL)
          ||  (l2cu_create_conn(p_lcb) == FALSE) )
         {
             L2CAP_TRACE_WARNING0 ("L2CAP - conn not started l2c_ucd_connect");

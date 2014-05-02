@@ -110,7 +110,7 @@ BOOLEAN L2CA_BleSlaveConnUpdate (tL2C_LCB *p_lcb, BD_ADDR rem_bda)
             break;
         }
     }
-    if(p_acl_cb) {
+    if(xx != MAX_L2CAP_LINKS) {
         status = p_acl_cb->le_read_remote_features_complete_status;
         if(status >= 0) {
             //le_read_remote features is complete
@@ -143,8 +143,9 @@ BOOLEAN L2CA_BleSlaveConnUpdate (tL2C_LCB *p_lcb, BD_ADDR rem_bda)
             p_lcb->latency = latency;
             p_lcb->timeout = timeout;
         }
+        return(TRUE);
     }
-    return(TRUE);
+    return(FALSE);
 }
 /*******************************************************************************
 **
@@ -405,7 +406,7 @@ void l2cble_scanner_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE type,
     /* If we don't have one, create one. this is auto connection complete. */
     if (!p_lcb)
     {
-        p_lcb = l2cu_allocate_lcb (bda, FALSE);
+        p_lcb = l2cu_allocate_lcb (bda, FALSE, LT_BLE);
         if (!p_lcb)
         {
             btm_sec_disconnect (handle, HCI_ERR_NO_CONNECTION);
@@ -436,6 +437,7 @@ void l2cble_scanner_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE type,
     p_lcb->link_state = LST_CONNECTED;
     p_lcb->link_role  = HCI_ROLE_MASTER;
     p_lcb->is_ble_link = TRUE;
+    l2c_ble_link_adjust_allocation();
 
 #if (!defined(BTA_BLE_SKIP_CONN_UPD) || BTA_BLE_SKIP_CONN_UPD == FALSE)
     /* If there are any preferred connection parameters, set them now */
@@ -501,7 +503,7 @@ void l2cble_advertiser_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE typ
     /* If we don't have one, create one and accept the connection. */
     if (!p_lcb)
     {
-        p_lcb = l2cu_allocate_lcb (bda, FALSE);
+        p_lcb = l2cu_allocate_lcb (bda, FALSE, LT_BLE);
         if (!p_lcb)
         {
             btm_sec_disconnect (handle, HCI_ERR_NO_CONNECTION);
@@ -526,6 +528,7 @@ void l2cble_advertiser_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE typ
     p_lcb->link_state = LST_CONNECTED;
     p_lcb->link_role  = HCI_ROLE_SLAVE;
     p_lcb->is_ble_link = TRUE;
+    l2c_ble_link_adjust_allocation();
 
     /* Tell BTM Acl management about the link */
     p_dev_rec = btm_find_or_alloc_dev (bda);
@@ -791,7 +794,7 @@ void L2CA_is_conn_update_api_pending (BD_ADDR  rem_bda)
 {
     tL2C_LCB  *p_lcb;
     p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda);
-    if(p_lcb->upd_disabled  == UPD_SLAVE_PENDING) {
+    if(p_lcb && p_lcb->upd_disabled  == UPD_SLAVE_PENDING) {
         L2CAP_TRACE_WARNING0 ("UPD_SLAVE_PENDING");
         L2CA_BleSlaveConnUpdate (p_lcb, rem_bda);
     }

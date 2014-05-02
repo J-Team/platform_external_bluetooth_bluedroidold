@@ -1730,10 +1730,13 @@ UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
                     BTM_TRACE_DEBUG6 ("btm_cb.pairing_bda %02x:%02x:%02x:%02x:%02x:%02x",
                                       btm_cb.pairing_bda[0], btm_cb.pairing_bda[1], btm_cb.pairing_bda[2],
                                       btm_cb.pairing_bda[3], btm_cb.pairing_bda[4], btm_cb.pairing_bda[5]);
-
-                    memset (btm_cb.pairing_bda, 0xff, BD_ADDR_LEN);
-                    btm_cb.pairing_state = BTM_PAIR_STATE_IDLE;
-                    btm_cb.pairing_flags = 0;
+                    /* Reset btm state only if the callback address matches pairing address*/
+                    if(memcmp(bd_addr, btm_cb.pairing_bda, BD_ADDR_LEN) == 0)
+                    {
+                        memset (btm_cb.pairing_bda, 0xff, BD_ADDR_LEN);
+                        btm_cb.pairing_state = BTM_PAIR_STATE_IDLE;
+                        btm_cb.pairing_flags = 0;
+                    }
                 }
                 break;
 

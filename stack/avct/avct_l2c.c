@@ -483,13 +483,13 @@ void avct_l2c_br_config_cfm_cback(UINT16 lcid, tL2CAP_CFG_INFO * p_cfg)
                 L2CA_DisconnectReq(lcid);
             }
         }
-   }
-   else
-   {
-       AVCT_TRACE_ERROR0("### BCB NULL");
-       L2CA_DisconnectReq(lcid);
-   }
-   AVCT_TRACE_DEBUG1("ch_state cfc: %d ", p_bcb->ch_state);
+        AVCT_TRACE_DEBUG1("ch_state cfc: %d ", p_bcb->ch_state);
+    }
+    else
+    {
+        AVCT_TRACE_ERROR0("### BCB NULL");
+        L2CA_DisconnectReq(lcid);
+    }
 }
 #endif
 

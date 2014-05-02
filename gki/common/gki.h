@@ -27,7 +27,34 @@
     #include "bt_target.h"
 #endif
 
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#ifndef GKI_POOL_ID_10
+#define GKI_POOL_ID_10             10
+#endif
 
+#ifndef GKI_BUF10_SIZE
+#define GKI_BUF10_SIZE            (65000 + 24)
+#endif
+
+#ifndef GKI_BUF10_MAX
+#define GKI_BUF10_MAX           50
+#endif
+
+#else
+
+#ifndef GKI_POOL_ID_10
+#define GKI_POOL_ID_10                0
+#endif /* ifndef GKI_POOL_ID_10 */
+
+#ifndef GKI_BUF10_SIZE
+#define GKI_BUF10_SIZE                0
+#endif /* ifndef GKI_BUF10_SIZE */
+
+#ifndef GKI_BUF10_MAX
+#define GKI_BUF10_MAX           0
+#endif
+
+#endif
 
 #include "bt_types.h"
 

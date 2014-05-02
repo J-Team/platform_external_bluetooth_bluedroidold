@@ -585,6 +585,14 @@ void handle_rc_passthrough_cmd ( tBTA_AV_REMOTE_CMD *p_remote_cmd)
             return;
         }
     }
+
+    if(!btif_av_is_connected())
+    {
+        APPL_TRACE_WARNING2("%s: AVDT not open, discarding pass-through command: %d",
+                                                        __FUNCTION__, p_remote_cmd->rc_id);
+        return;
+    }
+
     if (p_remote_cmd->key_state == AVRC_STATE_RELEASE) {
         status = "released";
         pressed = 0;
@@ -922,7 +930,18 @@ void btif_rc_handler(tBTA_AV_EVT event, tBTA_AV *p_data)
         {
             BTIF_TRACE_DEBUG2("CMD: rc_id:0x%x key_state:%d", p_data->remote_cmd.rc_id,
                                p_data->remote_cmd.key_state);
-            handle_rc_passthrough_cmd( (&p_data->remote_cmd) );
+            /** In race conditions just after 2nd AVRCP is connected
+             *  remote might send pass through commands, so check for
+             *  Rc handle before processing pass through commands
+             **/
+            if (btif_rc_cb.rc_handle == p_data->remote_cmd.rc_handle)
+            {
+                handle_rc_passthrough_cmd( (&p_data->remote_cmd) );
+            }
+            else
+            {
+                BTIF_TRACE_DEBUG0("Pas-through command for Invalid rc handle");
+            }
         }
         break;
 #if (AVRC_CTLR_INCLUDED == TRUE)

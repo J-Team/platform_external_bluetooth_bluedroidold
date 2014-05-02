@@ -100,7 +100,7 @@ BTA_API extern BOOLEAN bta_av_co_audio_init(UINT8 *p_codec_type, UINT8 *p_codec_
 **
 *******************************************************************************/
 BTA_API extern void bta_av_co_audio_disc_res(tBTA_AV_HNDL hndl, UINT8 num_seps,
-                                             UINT8 num_snk, BD_ADDR addr);
+                    UINT8 num_snk, UINT8 num_src, BD_ADDR addr, UINT16 uuid_local);
 
 /*******************************************************************************
 **

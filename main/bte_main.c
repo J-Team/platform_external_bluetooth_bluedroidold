@@ -77,6 +77,7 @@ typedef struct
 ******************************************************************************/
 BOOLEAN hci_logging_enabled = FALSE;    /* by default, turn hci log off */
 BOOLEAN hci_logging_config = FALSE;    /* configured from bluetooth framework */
+BOOLEAN hci_ext_dump_enabled = FALSE;  /* External BT snoop */
 char hci_logfile[256] = HCI_LOGGING_FILENAME;
 
 
@@ -278,7 +279,10 @@ void bte_main_config_hci_logging(BOOLEAN enable, BOOLEAN bt_disabled)
         return;
     }
 
-    bt_hc_if->logging(new ? BT_HC_LOGGING_ON : BT_HC_LOGGING_OFF, hci_logfile);
+    /* If snoop dump is handled from external process,
+       pass NULL for the file name */
+    bt_hc_if->logging(new ? BT_HC_LOGGING_ON : BT_HC_LOGGING_OFF,
+            hci_ext_dump_enabled ? NULL : hci_logfile);
 }
 
 /******************************************************************************
@@ -303,7 +307,12 @@ static void bte_hci_enable(void)
         assert(result == BT_HC_STATUS_SUCCESS);
 
         if (hci_logging_enabled == TRUE || hci_logging_config == TRUE)
-            bt_hc_if->logging(BT_HC_LOGGING_ON, hci_logfile);
+        {
+            /* If snoop dump is handled from external process,
+               pass NULL for the file name */
+            bt_hc_if->logging(BT_HC_LOGGING_ON,
+                hci_ext_dump_enabled ? NULL : hci_logfile);
+        }
 
 #if (defined (BT_CLEAN_TURN_ON_DISABLED) && BT_CLEAN_TURN_ON_DISABLED == TRUE)
         APPL_TRACE_DEBUG1("%s  Not Turninig Off the BT before Turninig ON", __FUNCTION__);
@@ -362,8 +371,14 @@ static void bte_hci_disable(void)
     {
         bt_hc_if->cleanup();
         bt_hc_if->set_power(BT_HC_CHIP_PWR_OFF);
+
         if (hci_logging_enabled == TRUE ||  hci_logging_config == TRUE)
-            bt_hc_if->logging(BT_HC_LOGGING_OFF, hci_logfile);
+        {
+            /* If snoop dump is handled from external process,
+               pass NULL for the file name */
+            bt_hc_if->logging(BT_HC_LOGGING_OFF,
+                hci_ext_dump_enabled ? NULL : hci_logfile);
+        }
     }
 }
 

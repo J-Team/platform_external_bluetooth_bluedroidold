@@ -1450,6 +1450,7 @@ void bta_av_disable(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
 void bta_av_api_disconnect(tBTA_AV_DATA *p_data)
 {
     AVDT_DisconnectReq(p_data->api_discnt.bd_addr, bta_av_conn_cback);
+    bta_av_cb.retry_attempt = 0;
     bta_sys_stop_timer(&bta_av_cb.sig_tmr);
 }
 
@@ -1539,6 +1540,7 @@ void bta_av_sig_chg(tBTA_AV_DATA *p_data)
 #if( defined BTA_AR_INCLUDED ) && (BTA_AR_INCLUDED == TRUE)
     else if (event == BTA_AR_AVDT_CONN_EVT)
     {
+        bta_av_cb.retry_attempt = 0;
         bta_sys_stop_timer(&bta_av_cb.sig_tmr);
     }
 #endif
@@ -1604,6 +1606,15 @@ void bta_av_sig_timer(tBTA_AV_DATA *p_data)
             p_lcb = &p_cb->lcb[xx];
             if(!p_lcb->conn_msk)
             {
+                if (p_cb->retry_attempt >= BTA_AV_RETRY_ATTEMPT)
+                {
+                    /* Silently close the connection, btif already updated */
+                    APPL_TRACE_DEBUG0("bta_av_sig_timer, Max retry attempt reached");
+                    p_cb->retry_attempt = 0;
+                    AVDT_DisconnectReq(p_lcb->addr, NULL);
+                    return;
+                }
+                p_cb->retry_attempt++;
                 bta_sys_start_timer(&p_cb->sig_tmr, BTA_AV_SIG_TIMER_EVT, BTA_AV_SIG_TIME_VAL);
                 bdcpy(pend.bd_addr, p_lcb->addr);
                 (*p_cb->p_cback)(BTA_AV_PENDING_EVT, (tBTA_AV *) &pend);

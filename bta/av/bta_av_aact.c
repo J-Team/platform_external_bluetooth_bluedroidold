@@ -362,12 +362,19 @@ static BOOLEAN bta_av_next_getcap(tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     int     i;
     tAVDT_GETCAP_REQ    *p_req;
     BOOLEAN     sent_cmd = FALSE;
+    UINT16 uuid_int = p_scb->uuid_int;
+    UINT8 sep_requested;
+
+    if(uuid_int == UUID_SERVCLASS_AUDIO_SOURCE)
+       sep_requested = AVDT_TSEP_SNK;
+    else if(uuid_int == UUID_SERVCLASS_AUDIO_SINK)
+       sep_requested = AVDT_TSEP_SRC;
 
     for (i = p_scb->sep_info_idx; i < p_scb->num_seps; i++)
     {
         /* steam not in use, is a sink, and is the right media type (audio/video) */
         if ((p_scb->sep_info[i].in_use == FALSE) &&
-            (p_scb->sep_info[i].tsep == AVDT_TSEP_SNK) &&
+            (p_scb->sep_info[i].tsep == sep_requested) &&
             (p_scb->sep_info[i].media_type == p_scb->media_type))
         {
             p_scb->sep_info_idx = i;
@@ -718,11 +725,9 @@ static void bta_av_a2d_sdp_cback(BOOLEAN found, tA2D_Service *p_service)
             p_msg->hdr.layer_specific = bta_av_cb.handle;
             bta_sys_sendmsg(p_msg);
             if (!found)
-            {
                 APPL_TRACE_ERROR0 ("bta_av_a2d_sdp_cback, SDP record not found");
-                APPL_TRACE_DEBUG0 ("bta_av_a2d_sdp_cback, start pm idle timer");
-                bta_sys_idle(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
-            }
+
+            bta_sys_conn_close(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
         }
         else
         {
@@ -923,6 +928,7 @@ void bta_av_do_disc_a2d (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     UINT16              attr_list[] = {ATTR_ID_SERVICE_CLASS_ID_LIST,
                                        ATTR_ID_PROTOCOL_DESC_LIST,
                                        ATTR_ID_BT_PROFILE_DESC_LIST};
+    UINT16 sdp_uuid; /* UUID for which SDP has to be done */
 
     APPL_TRACE_DEBUG3("bta_av_do_disc_a2d use_rc: %d rs:%d, oc:%d",
         p_data->api_open.use_rc, p_data->api_open.switch_res, bta_av_cb.audio_open_cnt);
@@ -997,7 +1003,7 @@ void bta_av_do_disc_a2d (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     p_scb->sec_mask = p_data->api_open.sec_mask;
     p_scb->use_rc = p_data->api_open.use_rc;
 
-    bta_sys_app_open(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
+    bta_sys_conn_open(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
 
     /* allocate discovery database */
     if (p_scb->p_disc_db == NULL)
@@ -1015,8 +1021,14 @@ void bta_av_do_disc_a2d (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
         db_params.num_attr = 3;
         db_params.p_db = p_scb->p_disc_db;
         db_params.p_attrs = attr_list;
+        p_scb->uuid_int = p_data->api_open.uuid;
+        if (p_scb->uuid_int == UUID_SERVCLASS_AUDIO_SINK)
+            sdp_uuid = UUID_SERVCLASS_AUDIO_SOURCE;
+        else if (p_scb->uuid_int == UUID_SERVCLASS_AUDIO_SOURCE)
+            sdp_uuid = UUID_SERVCLASS_AUDIO_SINK;
 
-        if(A2D_FindService(UUID_SERVCLASS_AUDIO_SINK, p_scb->peer_addr, &db_params,
+        APPL_TRACE_DEBUG2("uuid_int 0x%x, Doing SDP For 0x%x", p_scb->uuid_int, sdp_uuid);
+        if(A2D_FindService(sdp_uuid, p_scb->peer_addr, &db_params,
                         bta_av_a2d_sdp_cback) == A2D_SUCCESS)
         {
             return;
@@ -1210,6 +1222,7 @@ void bta_av_disconnect_req (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     tBTA_AV_RCB *p_rcb;
     APPL_TRACE_DEBUG1("bta_av_disconnect_req conn_lcb: 0x%x", bta_av_cb.conn_lcb);
 
+    bta_av_cb.retry_attempt = 0;
     bta_sys_stop_timer(&bta_av_cb.sig_tmr);
     bta_sys_stop_timer(&p_scb->timer);
     if(bta_av_cb.conn_lcb)
@@ -1296,6 +1309,7 @@ void bta_av_setconfig_rsp (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     AVDT_ConfigRsp(p_scb->avdt_handle, p_scb->avdt_label, p_data->ci_setconfig.err_code,
                    p_data->ci_setconfig.category);
 
+    bta_av_cb.retry_attempt = 0;
     bta_sys_stop_timer(&bta_av_cb.sig_tmr);
 
     if(p_data->ci_setconfig.err_code == AVDT_SUCCESS)
@@ -1319,7 +1333,8 @@ void bta_av_setconfig_rsp (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
                        * call disc_res now */
            /* this is called in A2DP SRC path only, In case of SINK we don't need it  */
             if (local_sep == AVDT_TSEP_SRC)
-                p_scb->p_cos->disc_res(p_scb->hndl, num, num, p_scb->peer_addr);
+                p_scb->p_cos->disc_res(p_scb->hndl, num, num, 0, p_scb->peer_addr,
+                                                      UUID_SERVCLASS_AUDIO_SOURCE);
         }
         else
         {
@@ -1380,7 +1395,7 @@ void bta_av_str_opened (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     L2CA_SetTxPriority(p_scb->l2c_cid, L2CAP_CHNL_PRIORITY_HIGH);
     L2CA_SetChnlFlushability (p_scb->l2c_cid, TRUE);
 
-    bta_sys_conn_open(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
+    bta_sys_conn_open(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->peer_addr);
     memset(&p_scb->q_info, 0, sizeof(tBTA_AV_Q_INFO));
 
     p_scb->l2c_bufs = 0;
@@ -1501,6 +1516,7 @@ void bta_av_do_close (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     {
         bta_av_str_stopped(p_scb, NULL);
     }
+    bta_av_cb.retry_attempt = 0;
     bta_sys_stop_timer(&bta_av_cb.sig_tmr);
 
     /* close stream */
@@ -1575,8 +1591,11 @@ void bta_av_sdp_failed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
 *******************************************************************************/
 void bta_av_disc_results (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
 {
-    UINT8 num_snks = 0, i;
+    UINT8 num_snks = 0, num_srcs =0, i;
+    /* our uuid in case we initiate connection */
+    UINT16 uuid_int = p_scb->uuid_int;
 
+    APPL_TRACE_DEBUG1(" initiator UUID 0x%x", uuid_int);
     /* store number of stream endpoints returned */
     p_scb->num_seps = p_data->str_msg.msg.discover_cfm.num_seps;
 
@@ -1584,15 +1603,23 @@ void bta_av_disc_results (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     {
         /* steam not in use, is a sink, and is audio */
         if ((p_scb->sep_info[i].in_use == FALSE) &&
-            (p_scb->sep_info[i].tsep == AVDT_TSEP_SNK) &&
             (p_scb->sep_info[i].media_type == p_scb->media_type))
         {
-            num_snks++;
+            if((p_scb->sep_info[i].tsep == AVDT_TSEP_SNK) &&
+               (uuid_int == UUID_SERVCLASS_AUDIO_SOURCE))
+                num_snks++;
+
+            if((p_scb->sep_info[i].tsep == AVDT_TSEP_SRC) &&
+               (uuid_int == UUID_SERVCLASS_AUDIO_SINK))
+                num_srcs++;
+
         }
     }
 
-    p_scb->p_cos->disc_res(p_scb->hndl, p_scb->num_seps, num_snks, p_scb->peer_addr);
+    p_scb->p_cos->disc_res(p_scb->hndl, p_scb->num_seps, num_snks, num_srcs, p_scb->peer_addr,
+                                                                                    uuid_int);
     p_scb->num_disc_snks = num_snks;
+    p_scb->num_disc_srcs = num_srcs;
 
     /* if we got any */
     if (p_scb->num_seps > 0)
@@ -1640,8 +1667,10 @@ void bta_av_disc_res_as_acp (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
             num_snks++;
         }
     }
-    p_scb->p_cos->disc_res(p_scb->hndl, p_scb->num_seps, num_snks, p_scb->peer_addr);
+    p_scb->p_cos->disc_res(p_scb->hndl, p_scb->num_seps, num_snks, 0, p_scb->peer_addr,
+                                                          UUID_SERVCLASS_AUDIO_SOURCE);
     p_scb->num_disc_snks = num_snks;
+    p_scb->num_disc_srcs = 0;
 
     /* if we got any */
     if (p_scb->num_seps > 0)
@@ -1813,6 +1842,7 @@ void bta_av_getcap_results (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     tAVDT_CFG   cfg;
     UINT8       media_type;
     tAVDT_SEP_INFO  *p_info = &p_scb->sep_info[p_scb->sep_info_idx];
+    UINT16 uuid_int; /* UUID for which connection was initiatied */
 
     memcpy(&cfg, &p_scb->cfg, sizeof(tAVDT_CFG));
     cfg.num_codec = 1;
@@ -1841,11 +1871,25 @@ void bta_av_getcap_results (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
         /* save copy of codec type and configuration */
         p_scb->codec_type = cfg.codec_info[BTA_AV_CODEC_TYPE_IDX];
         memcpy(&p_scb->cfg, &cfg, sizeof(tAVDT_CFG));
-        /* A2DP SINK does not call getcaps, consequently this will not be called in SINK path. Connect from A2DP SINK is not going to happen*/
-        bta_av_adjust_seps_idx(p_scb, bta_av_get_scb_handle(p_scb, AVDT_TSEP_SRC));
+
+        uuid_int = p_scb->uuid_int;
+        APPL_TRACE_DEBUG1(" initiator UUID = 0x%x ", uuid_int);
+        if (uuid_int == UUID_SERVCLASS_AUDIO_SOURCE)
+            bta_av_adjust_seps_idx(p_scb, bta_av_get_scb_handle(p_scb, AVDT_TSEP_SRC));
+        else if (uuid_int == UUID_SERVCLASS_AUDIO_SINK)
+            bta_av_adjust_seps_idx(p_scb, bta_av_get_scb_handle(p_scb, AVDT_TSEP_SNK));
+
         /* use only the services peer supports */
         cfg.psc_mask &= p_scb->p_cap->psc_mask;
         p_scb->cur_psc_mask = cfg.psc_mask;
+
+        if ((uuid_int == UUID_SERVCLASS_AUDIO_SINK) &&
+            (p_scb->seps[p_scb->sep_idx].p_app_data_cback != NULL))
+        {
+            APPL_TRACE_DEBUG0(" Configure Deoder for Sink Connection ");
+            p_scb->seps[p_scb->sep_idx].p_app_data_cback(BTA_AV_MEDIA_SINK_CFG_EVT,
+                     (tBTA_AV_MEDIA*)p_scb->cfg.codec_info);
+        }
 
         /* open the stream */
         AVDT_OpenReq(p_scb->seps[p_scb->sep_idx].av_handle, p_scb->peer_addr,
@@ -2329,7 +2373,7 @@ void bta_av_start_ok (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     }
 
     /* tell role manager to check M/S role */
-    bta_sys_conn_open(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
+    bta_sys_conn_open(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->peer_addr);
 
     bta_sys_busy(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->peer_addr);
 
@@ -2476,7 +2520,7 @@ void bta_av_str_closed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
         event = BTA_AV_OPEN_EVT;
         p_scb->open_status = BTA_AV_SUCCESS;
 
-        bta_sys_conn_close(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
+        bta_sys_conn_close(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->peer_addr);
         bta_av_cleanup(p_scb, p_data);
         (*bta_av_cb.p_cback)(event, &data);
     }
@@ -2497,7 +2541,7 @@ void bta_av_str_closed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
             data.close.hndl = p_scb->hndl;
             event = BTA_AV_CLOSE_EVT;
 
-            bta_sys_conn_close(BTA_ID_AV, p_scb->app_id, p_scb->peer_addr);
+            bta_sys_conn_close(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->peer_addr);
             bta_av_cleanup(p_scb, p_data);
             (*bta_av_cb.p_cback)(event, &data);
         }

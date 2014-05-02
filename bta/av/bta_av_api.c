@@ -167,7 +167,8 @@ void BTA_AvDeregister(tBTA_AV_HNDL hndl)
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_AvOpen(BD_ADDR bd_addr, tBTA_AV_HNDL handle, BOOLEAN use_rc, tBTA_SEC sec_mask)
+void BTA_AvOpen(BD_ADDR bd_addr, tBTA_AV_HNDL handle, BOOLEAN use_rc, tBTA_SEC sec_mask,
+                                                                             UINT16 uuid)
 {
     tBTA_AV_API_OPEN  *p_buf;
 
@@ -179,6 +180,7 @@ void BTA_AvOpen(BD_ADDR bd_addr, tBTA_AV_HNDL handle, BOOLEAN use_rc, tBTA_SEC s
         p_buf->use_rc = use_rc;
         p_buf->sec_mask = sec_mask;
         p_buf->switch_res = BTA_AV_RS_NONE;
+        p_buf->uuid = uuid;
         bta_sys_sendmsg(p_buf);
     }
 }
@@ -243,6 +245,31 @@ void BTA_AvStart(void)
         p_buf->event = BTA_AV_API_START_EVT;
         bta_sys_sendmsg(p_buf);
     }
+}
+
+/*******************************************************************************
+**
+** Function         BTA_AvEnable_Sink
+**
+** Description      Enable/Disable A2DP Sink..
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTA_AvEnable_Sink(int enable)
+{
+    BT_HDR  *p_buf;
+
+#ifdef BTA_AVK_INCLUDED
+    if ((p_buf = (BT_HDR *) GKI_getbuf(sizeof(BT_HDR))) != NULL)
+    {
+        p_buf->event = BTA_AV_API_SINK_ENABLE_EVT;
+        p_buf->layer_specific = enable;
+        bta_sys_sendmsg(p_buf);
+    }
+#else
+    return;
+#endif
 }
 
 /*******************************************************************************

@@ -33,6 +33,9 @@
 #include <sys/prctl.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <cutils/sockets.h>
+#include <sys/un.h>
+#include <sys/poll.h>
 #include <fcntl.h>
 
 #include <arpa/inet.h>
@@ -68,8 +71,22 @@
 #define SNOOPDBG(param, ...) {}
 #endif
 
+#define HCIT_TYPE_COMMAND   1
+#define HCIT_TYPE_ACL_DATA  2
+#define HCIT_TYPE_SCO_DATA  3
+#define HCIT_TYPE_EVENT     4
+
 /* file descriptor of the BT snoop file (by default, -1 means disabled) */
 int hci_btsnoop_fd = -1;
+
+/* Local parser definitions */
+#define EXT_PARSER_LOCAL_NAME "bthcitraffic"
+static int local_ext_parser_fd = -1;
+static void local_ext_parser_thread(void* param);
+static void local_ext_parser_detached(void);
+static pthread_t local_parser_thread_id;
+static int s_listen_local = -1;
+static int local_parser_active = 0;
 
 /* Macro to perform a multiplication of 2 unsigned 32bit values and store the result
  * in an unsigned 64 bit value (as two 32 bit variables):
@@ -234,6 +251,21 @@ static int btsnoop_log_open(char *btsnoop_logfile)
         write(hci_btsnoop_fd, "btsnoop\0\0\0\0\1\0\0\x3\xea", 16);
         return 1;
     }
+    else /* Null passed for external snoop dump enabling */
+    {
+        ALOGD("Starting Ext dump conn thread :");
+        if (pthread_create(&local_parser_thread_id, NULL,
+                       (void*)local_ext_parser_thread,NULL) != 0)
+        {
+            perror("pthread_create");
+            ALOGE("Thread creation for Local socket Listen Failed : ", strerror(errno));
+            return -1;
+        }
+        ALOGD("Starting Ext dump process :");
+        property_set("bluetooth.startbtsnoop", "true");
+        /* Need to depend on the flag as pthread_t invalid value check is unpredictable */
+        local_parser_active = 1;
+    }
 #endif
     return 2;  /* Snoop not available  */
 }
@@ -256,6 +288,15 @@ static int btsnoop_log_close(void)
         close(hci_btsnoop_fd);
         hci_btsnoop_fd = -1;
         return 1;
+    }
+    if (local_parser_active == 1)
+    {
+        ALOGD("Stopping Ext dump process :");
+        pthread_kill(local_parser_thread_id, SIGUSR2);
+        pthread_join(local_parser_thread_id, NULL);
+        local_ext_parser_detached();
+        property_set("bluetooth.startbtsnoop", "false");
+        local_parser_active = 0;
     }
     return 0;
 #else
@@ -453,6 +494,41 @@ void btsnoop_acl_data(uint8_t *p, uint8_t is_rcvd)
 
 #define EXT_PARSER_PORT 4330
 
+static int local_ext_parser_accept(void)
+{
+    int conn_sk, length;
+    struct sockaddr_un cliaddr;
+    s_listen_local = socket(AF_LOCAL, SOCK_STREAM, 0);
+    if(s_listen_local < 0)
+        return -1;
+
+    ALOGD("Waiting for Parser Connection on Local Socket %s", EXT_PARSER_LOCAL_NAME);
+
+    if(socket_local_server_bind(s_listen_local, EXT_PARSER_LOCAL_NAME,
+        ANDROID_SOCKET_NAMESPACE_ABSTRACT) < 0)
+    {
+        ALOGE("Failed to create Local Socket for Parser (%s)", strerror(errno));
+        return -1;
+    }
+
+    if (listen(s_listen_local, 1) < 0)
+    {
+        ALOGE("listen failed (%s)", strerror(errno));
+        close(s_listen_local);
+        return -1;
+    }
+
+    conn_sk = accept(s_listen_local, (struct sockaddr *)&cliaddr, &length);
+    if (conn_sk < 0)
+    {
+        ALOGE("Parser Conn Accept failed (%s)", strerror(errno));
+        close(s_listen_local);
+        return -1;
+    }
+    ALOGD("connected to Local Parser on %d", conn_sk);
+    return conn_sk;
+}
+
 static pthread_t thread_id;
 static int s_listen = -1;
 static int ext_parser_fd = -1;
@@ -581,6 +657,152 @@ static void interruptFn (int sig)
     pthread_exit(0);
 }
 
+static void local_ext_parser_detached(void)
+{
+    ALOGD("ext parser detached");
+
+    if (local_ext_parser_fd > 0)
+        close(local_ext_parser_fd);
+
+    if (s_listen_local > 0)
+        close(s_listen_local);
+
+    local_ext_parser_fd = -1;
+    s_listen_local = -1;
+}
+
+static void local_ext_parser_thread(void* param)
+{
+    int fd, ret;
+    int sig = SIGUSR2;
+    char buf[4];
+    sigset_t sigSet;
+    sigemptyset (&sigSet);
+    sigaddset (&sigSet, sig);
+
+    ALOGD("local_ext_parser_thread");
+
+    prctl(PR_SET_NAME, (unsigned long)"BtsnoopLocalExtParser", 0, 0, 0);
+
+    pthread_sigmask(SIG_UNBLOCK, &sigSet, NULL);
+
+    struct sigaction act;
+    act.sa_handler = interruptFn;
+    sigaction (sig, &act, NULL );
+
+    do
+    {
+        fd = local_ext_parser_accept();
+        if (fd == -1)
+        {
+            ALOGE("Error :%s\n", strerror(errno));
+            break;
+        }
+
+        local_ext_parser_fd = fd;
+
+        ALOGD("Local ext parser attached on fd %d\n", local_ext_parser_fd);
+        ret = read (fd, buf, 4);
+        ALOGD("Read returned %d\n", ret);
+        if (ret == -1)
+        {
+            ALOGD("Error :%s\n", strerror(errno));
+        }
+        local_ext_parser_detached ();
+    } while (1);
+}
+
+/*******************************************************************************
+ **
+ ** Function         btsnoop_ext_dump
+ **
+ ** Description      Function to dump the snoop packet to local socket
+ **
+ ** Returns          None
+*******************************************************************************/
+void btsnoop_ext_dump(uint8_t *p, uint8_t is_rcv)
+{
+    uint32_t value, value_hi;
+    struct timeval tv;
+    uint32_t offset = 0;
+    uint32_t length, flag;
+    uint8_t snoop_buf[1200] = {0};
+    struct pollfd pfd;
+
+    if (local_ext_parser_fd == -1)
+    {
+        return;
+    }
+
+    pfd.fd = local_ext_parser_fd;
+    pfd.events = POLLOUT;
+
+    switch (*p)
+    {
+        case HCIT_TYPE_COMMAND:
+            length = p[3] + 4;
+            flag = 2;
+            break;
+        case HCIT_TYPE_ACL_DATA:
+            length = (p[4] << 8) + p[3] + 5;
+            flag = is_rcv;
+            break;
+        case HCIT_TYPE_EVENT:
+            length = p[2] + 3;
+            flag = 3;
+            break;
+        case HCIT_TYPE_SCO_DATA:
+            length = p[3] + 4;
+            flag = is_rcv;
+        default:
+            ALOGD("btsnoop dump ext : packet type error :");
+            return;
+    }
+    value = l_to_be(length);
+
+    /* store the length in both original and included fields */
+    memcpy(snoop_buf + offset, &value, 4);
+    offset += 4;
+    memcpy(snoop_buf + offset, &value, 4);
+    offset += 4;
+
+    /* flags:  */
+    value = l_to_be(flag);
+    memcpy(snoop_buf + offset, &value, 4);
+    offset += 4;
+
+    /* drops: none */
+    value = 0;
+    memcpy(snoop_buf + offset, &value, 4);
+    offset += 4;
+
+    /* time */
+    gettimeofday(&tv, NULL);
+    tv.tv_sec += gmt_offset;
+    tv_to_btsnoop_ts(&value, &value_hi, &tv);
+    value_hi = l_to_be(value_hi);
+    value = l_to_be(value);
+    memcpy(snoop_buf + offset, &value_hi, 4);
+    offset += 4;
+    memcpy(snoop_buf + offset, &value, 4);
+    offset = offset + 4;
+
+    memcpy(snoop_buf + offset, p, length);
+
+    if (poll(&pfd, 1, 10) == 0)
+    {
+        ALOGE("btsnoop dump ext : Snoop dump taking more than 10 ms : skip dump");
+        return;
+    }
+    if (write(local_ext_parser_fd, snoop_buf, offset + length) !=  offset + length)
+    {
+        ALOGE("btsnoop dump ext : Failed to write complete snoop packet ");
+    }
+
+    SNOOPDBG ("Write Packet %0x %0x %0x %0x", bt_extsnoop[0], bt_extsnoop[1],
+        bt_extsnoop[2], bt_extsnoop[3]);
+}
+
 static void ext_parser_thread(void* param)
 {
     int fd, ret;
@@ -641,7 +863,9 @@ void btsnoop_init(void)
     /* always setup ext listener port */
     if (pthread_create(&thread_id, NULL,
                        (void*)ext_parser_thread,NULL)!=0)
-      perror("pthread_create");
+    {
+        perror("pthread_create");
+    }
 #endif
 }
 
@@ -672,11 +896,6 @@ void btsnoop_cleanup (void)
 }
 
 
-#define HCIT_TYPE_COMMAND   1
-#define HCIT_TYPE_ACL_DATA  2
-#define HCIT_TYPE_SCO_DATA  3
-#define HCIT_TYPE_EVENT     4
-
 void btsnoop_capture(HC_BT_HDR *p_buf, uint8_t is_rcvd)
 {
     uint8_t *p = (uint8_t *)(p_buf + 1) + p_buf->offset;
@@ -689,7 +908,7 @@ void btsnoop_capture(HC_BT_HDR *p_buf, uint8_t is_rcvd)
     }
 
 #if defined(BTSNOOP_EXT_PARSER_INCLUDED) && (BTSNOOP_EXT_PARSER_INCLUDED == TRUE)
-    if (ext_parser_fd > 0)
+    if ((ext_parser_fd > 0) || (local_ext_parser_fd != -1))
     {
         uint8_t tmp, tmp_hndl_hi = 0xFF;
 
@@ -726,6 +945,12 @@ void btsnoop_capture(HC_BT_HDR *p_buf, uint8_t is_rcvd)
         {
             p[2] = tmp_hndl_hi;
         }
+        if (local_ext_parser_fd != -1)
+        {
+            utils_lock();
+            btsnoop_ext_dump(p, is_rcvd);
+            utils_unlock();
+        }
         *p = tmp;
         p++;
         return;
@@ -733,6 +958,7 @@ void btsnoop_capture(HC_BT_HDR *p_buf, uint8_t is_rcvd)
 #endif
 
 #if defined(BTSNOOPDISP_INCLUDED) && (BTSNOOPDISP_INCLUDED == TRUE)
+
     if (hci_btsnoop_fd == -1)
         return;
 
