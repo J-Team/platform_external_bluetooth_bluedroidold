@@ -55,6 +55,9 @@ static void bta_dm_pm_ssr(BD_ADDR peer_addr);
 /* Sniff interval for active ESCO and HID connection */
 #define SNIFF_INTERVAL_ACTIVE_HID_ESCO 12
 
+/* Sniff Max latency for active HID connection */
+#define BTA_HH_SSR_MAX_LATENCY_OPTIMAL 360
+
 tBTA_DM_CONNECTED_SRVCS bta_dm_conn_srvcs;
 
 
@@ -664,10 +667,10 @@ static void bta_dm_pm_ssr(BD_ADDR peer_addr)
                     continue;
                 APPL_TRACE_WARNING2("bta_dm_pm_ssr: Orignal Max Latency = %d, Remote Timeout = %d",
                     p_spec_cur->max_lat, p_spec_cur->min_rmt_to);
-                /*if (p_spec_cur->max_lat > BTA_HH_SSR_MAX_LATENCY_OPTIMAL)
+                if (p_spec_cur->max_lat > BTA_HH_SSR_MAX_LATENCY_OPTIMAL)
                 {
                     p_spec_cur->max_lat = BTA_HH_SSR_MAX_LATENCY_OPTIMAL;
-                }*/
+                }
                 APPL_TRACE_WARNING1("bta_dm_pm_ssr: New Max Latency = %d", p_spec_cur->max_lat);
             }
 #endif
